@@ -8,10 +8,14 @@ This directory contains a hardened Docker image and a small launcher script for 
 - `no-new-privileges` is enabled
 - All Linux capabilities are dropped (`--cap-drop=ALL`)
 - Basic resource limits are enabled (`pids`, `memory`, `cpu`)
+- Root filesystem can be read-only (`--read-only`) with writable tmpfs for `/tmp` and `/run`
+- Optional AppArmor confinement is supported on Linux hosts via `APPARMOR_PROFILE`.
 
 Networking is intentionally left enabled for now so flows like `/connect` can still work.
 
 ## Build
+
+Build image:
 
 ```bash
 ./build.sh
@@ -62,8 +66,30 @@ vim build.env
 
 ## Run
 
+If you want AppArmor enabled, load the provided profile first:
+
+```bash
+bash ./scripts/load-apparmor-profile.sh
+```
+
+On macOS this command is a no-op because Docker Desktop on mac does not expose AppArmor to the host VM.
+
+Then run with the profile name:
+
+```bash
+APPARMOR_PROFILE=opencode-sandbox ./run.sh
+```
+
+You can also run with no AppArmor profile loaded:
+
 ```bash
 ./run.sh
+```
+
+If your host has an existing profile and you prefer that, set `APPARMOR_PROFILE` accordingly:
+
+```bash
+APPARMOR_PROFILE=docker-default ./run.sh
 ```
 
 You can also pass a command to run in the container:
@@ -96,11 +122,34 @@ Your project files are mounted from your host working directory into `/work`.
 - `MEMORY_LIMIT` (default `1g`)
 - `CPU_LIMIT` (default `1.0`)
 - `PIDS_LIMIT` (default `256`)
+- `READ_ONLY_ROOTFS` (default `true`)
+- `TMPFS_SIZE` (default `128m`)
+- `RUN_TMPFS_SIZE` (default `64m`)
+- `CONTAINER_UID` (default `10001`)
+- `RUN_USER_TMPFS_SIZE` (default `32m`)
+- `APPARMOR_PROFILE` (default empty)
+
+Note: `APPARMOR_PROFILE` only applies when Docker host AppArmor is available. On macOS, the value is ignored with a warning.
 
 Example:
 
 ```bash
 MEMORY_LIMIT=2g CPU_LIMIT=2.0 ./run.sh
+```
+
+By default the container runs with a read-only root filesystem and writable mounts only for:
+
+- `/work` (your host project directory)
+- `/home/opencode` (persistent state)
+- `/tmp`, `/run`, and `/run/user/<uid>` (in-memory tmpfs)
+- `/tmp` is mounted with `exec` so OpenCode can initialize its terminal UI library
+- `XDG_RUNTIME_DIR` is set to `/run/user/10001` by default in read-only mode
+- `/run/user/<uid>` is mounted as that same uid/gid so the container user can create runtime sockets/files there
+
+Disable read-only if needed:
+
+```bash
+READ_ONLY_ROOTFS=false ./run.sh
 ```
 
 ## Reset persisted opencode home state
