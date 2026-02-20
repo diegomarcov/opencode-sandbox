@@ -10,6 +10,8 @@ This directory contains a hardened Docker image and a small launcher script for 
 - Basic resource limits are enabled (`pids`, `memory`, `cpu`)
 - Root filesystem can be read-only (`--read-only`) with writable tmpfs for `/tmp` and `/run`
 - Optional AppArmor confinement is supported on Linux hosts via `APPARMOR_PROFILE`.
+- Default seccomp confinement is enabled on macOS to add another Linux-container isolation layer while keeping `/connect` online.
+- State mount is resilient by default (`STATE_INIT_MODE=auto` falls back to `STATE_BIND_DIR` when the state volume is not writable).
 
 Networking is intentionally left enabled for now so flows like `/connect` can still work.
 
@@ -154,6 +156,8 @@ Your project files are mounted from your host working directory into `/work`.
 - `IMAGE_NAME` (default `opencode-sandbox:dev`)
 - `CONTAINER_NAME` (default `opencode-sandbox`)
 - `STATE_VOLUME` (default `opencode-home` for uid 10001, otherwise `opencode-home-<uid>`)
+- `STATE_INIT_MODE` (default `auto`; options `auto`, `volume`, `bind`)
+- `STATE_BIND_DIR` (default `${HOME}/.local/share/opencode-sandbox/state`)
 - `HOST_WORKDIR` (default current host directory)
 - `MEMORY_LIMIT` (default `1g`)
 - `CPU_LIMIT` (default `1.0`)
@@ -165,14 +169,20 @@ Your project files are mounted from your host working directory into `/work`.
 - `CONTAINER_GID` (default current host gid on Linux, `10001` on macOS)
 - `RUN_USER_TMPFS_SIZE` (default `32m`)
 - `NETWORK_MODE` (default `bridge`)
+- `SECCOMP_PROFILE` (default `seccomp/opencode-mac.json` on macOS)
+- `SECCOMP_ENFORCE` (default `true` on macOS, `false` elsewhere)
 - `APPARMOR_PROFILE` (default empty)
 - `REQUIRE_APPARMOR` (default `false`)
 
-Note: `APPARMOR_PROFILE` only applies when Docker host AppArmor is available. On macOS, the value is ignored with a warning.
-`REQUIRE_APPARMOR=true` switches that behavior to fail fast instead of warning.
+Notes:
+  - `APPARMOR_PROFILE` only applies when Docker host AppArmor is available. On macOS, the value is ignored with a warning.
+  - `STATE_INIT_MODE=auto` tries `STATE_VOLUME` first, then falls back to `STATE_BIND_DIR` when writable checks fail.
+  - `APPARMOR_PROFILE` + `REQUIRE_APPARMOR=true` switches to fail fast when AppArmor is unavailable.
+  - On macOS, `SECCOMP_PROFILE` adds an additional hardening layer without requiring AppArmor.
+
 `NETWORK_MODE` controls `docker run --network`; set `NETWORK_MODE=none` for strict offline mode.
 `CONTAINER_UID` and `CONTAINER_GID` are passed through to `docker run --user`; on Linux this should be your host account to keep `/work` writable.
-On Linux, `run.sh` also normalizes ownership of the default state volume (`/home/opencode`) to `CONTAINER_UID:CONTAINER_GID` before launching so project edits keep working after the first run.
+Common proxy env vars (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants) are also passed into the container for connector/network access.
 
 Example:
 
@@ -197,9 +207,10 @@ READ_ONLY_ROOTFS=false ./run.sh
 
 ## Reset persisted opencode home state
 
-If you need to start fresh, remove the named volume:
+If you need to start fresh, remove the named volume (default volume mode) or delete the bind directory (bind mode):
 
 ```bash
 docker volume rm opencode-home            # default legacy UID 10001
 docker volume rm "opencode-home-$(id -u)"  # host-uid-based default
+rm -rf "$STATE_BIND_DIR"               # when using STATE_INIT_MODE=bind
 ```

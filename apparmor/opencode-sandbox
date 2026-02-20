@@ -10,8 +10,16 @@ profile opencode-sandbox flags=(attach_disconnected, mediate_deleted) {
 
   # Binary execution.
   /usr/local/bin/opencode rix,
+  /usr/bin/opencode rix,
   /usr/bin/** rix,
   /bin/** rix,
+  /lib/** rix,
+  /lib64/** rix,
+  /usr/lib/** rix,
+  /usr/local/lib/** rix,
+
+  # TLS/cert and data reads.
+  /usr/share/** r,
 
   # Writable work and state directories.
   @{WORKDIR}/ rw,
@@ -35,10 +43,12 @@ profile opencode-sandbox flags=(attach_disconnected, mediate_deleted) {
   /dev/random r,
   /dev/urandom r,
   /dev/tty rw,
+  /dev/pts/[0-9]* rw,
 
   # Keep potentially risky operations unavailable.
   deny /proc/*/mem rw,
   deny /proc/kcore rw,
+  deny /proc/sys/kernel/core_pattern rw,
   deny /sys/** w,
   deny mount,
   deny ptrace,

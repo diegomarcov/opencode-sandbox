@@ -35,7 +35,7 @@ else
   SUDO=""
 fi
 
-PROFILE_NAME="$(awk '/^profile[[:space:]]+/ {print $2; exit}' "$PROFILE_PATH" | sed 's/[[:space:]]*{//' )"
+PROFILE_NAME="$(awk '/^profile[[:space:]]+/ { if (match($0, /^profile[[:space:]]+([^[:space:]]+)/, m)) print m[1]; exit }' "$PROFILE_PATH" | sed 's/[[:space:]]*{//')"
 PROFILE_NAME="${PROFILE_NAME:-$(basename "$PROFILE_PATH")}"
 
 if ! "$SUDO" apparmor_parser -r -W "$PROFILE_PATH"; then

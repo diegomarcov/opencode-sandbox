@@ -1,0 +1,43 @@
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": ["SCMP_ARCH_X86_64"]
+    },
+    {
+      "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": ["SCMP_ARCH_AARCH64"]
+    }
+  ],
+  "syscalls": [
+    {
+      "names": [
+        "ptrace",
+        "reboot",
+        "swapon",
+        "swapoff",
+        "kexec_load",
+        "kexec_file_load",
+        "init_module",
+        "finit_module",
+        "delete_module",
+        "setns",
+        "mount",
+        "umount2",
+        "pivot_root"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [],
+      "comment": "Deny risky container escape and kernel mutation calls"
+    },
+    {
+      "names": [
+        "personality"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "comment": "Reduce ABI/arch abuse surface",
+      "args": []
+    }
+  ]
+}
