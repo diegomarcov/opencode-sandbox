@@ -23,6 +23,32 @@ Build image:
 
 `build.sh` reads default values from `build.env`, so the version and hashes are kept centralized.
 
+### Upgrading Opencode version
+
+The normal workflow for version upgrades is:
+
+1. Edit `build.env` values for
+   - `OPENCODE_VERSION`
+   - `OPENCODE_SHA256_X64_BASELINE`
+   - `OPENCODE_SHA256_ARM64`
+   and then run:
+
+```bash
+./build.sh
+```
+
+If you only know the new `OPENCODE_VERSION`, fetch hashes directly from GitHub first:
+
+```bash
+OPENCODE_VERSION=1.2.10 ./build.sh --fetch-hashes
+```
+
+Use `--write-hashes` to persist the fetched hashes into `build.env` in one shot:
+
+```bash
+OPENCODE_VERSION=1.2.10 ./build.sh --fetch-hashes --write-hashes
+```
+
 `build.sh` auto-selects the container target platform from the host architecture:
 - Linux x86_64 -> `linux/amd64`
 - Linux arm64 / aarch64 -> `linux/arm64`

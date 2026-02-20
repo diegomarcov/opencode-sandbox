@@ -4,6 +4,85 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${BUILD_ENV_FILE:-${SCRIPT_DIR}/build.env}"
 
+usage() {
+  cat <<'EOF'
+Usage:
+  ./build.sh [docker build flags]
+  ./build.sh --fetch-hashes [--write-hashes]
+
+Environment variables override build values and pass through to Docker:
+  OPENCODE_VERSION, OPENCODE_SHA256_X64_BASELINE,
+  OPENCODE_SHA256_ARM64, OPENCODE_GITHUB_REPO,
+  OPENCODE_TARGETPLATFORM, IMAGE_NAME, DOCKERFILE
+
+Options:
+  --platform <plat>       Same as --platform for docker build
+  --platform=<plat>       Same as --platform for docker build
+  --fetch-hashes          Download both release artifacts and print SHA-256 hashes for OPENCODE_VERSION
+  --write-hashes          Update build.env with fetched hashes (use with --fetch-hashes)
+  -h, --help              Show this help
+
+This is a pass-through wrapper: any unrecognized flags are forwarded to docker build.
+EOF
+}
+
+error() {
+  printf 'error: %s\n' "$1" >&2
+}
+
+validate_hash() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    error "${name} must be a 64-char SHA-256 hex string"
+    return 1
+  fi
+}
+
+fetch_hashes() {
+  local artifact="$1"
+  local tmp_file
+  local hash
+  local url
+
+  tmp_file="$(mktemp)"
+  url="https://github.com/${OPENCODE_GITHUB_REPO}/releases/download/v${OPENCODE_VERSION}/${artifact}"
+
+  curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "$tmp_file" "$url"
+  hash="$(sha256sum "$tmp_file" | awk '{print $1}')"
+  rm -f "$tmp_file"
+  printf '%s' "$hash"
+}
+
+write_hashes_to_env() {
+  local env_file="$1"
+  local x64_hash="$2"
+  local arm64_hash="$3"
+
+  if [[ ! -w "$env_file" ]]; then
+    error "Cannot write hashes to ${env_file}: file is not writable"
+    return 1
+  fi
+
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  awk -v version="$OPENCODE_VERSION" -v hash_x64="$x64_hash" -v hash_arm64="$arm64_hash" '
+    BEGIN { found_version=0; found_hash_x64=0; found_hash_arm64=0 }
+    /^OPENCODE_VERSION=/ { print "OPENCODE_VERSION=" version; found_version=1; next }
+    /^OPENCODE_SHA256_X64_BASELINE=/ { print "OPENCODE_SHA256_X64_BASELINE=" hash_x64; found_hash_x64=1; next }
+    /^OPENCODE_SHA256_ARM64=/ { print "OPENCODE_SHA256_ARM64=" hash_arm64; found_hash_arm64=1; next }
+    { print }
+    END {
+      if (!found_version) { print "OPENCODE_VERSION=" version }
+      if (!found_hash_x64) { print "OPENCODE_SHA256_X64_BASELINE=" hash_x64 }
+      if (!found_hash_arm64) { print "OPENCODE_SHA256_ARM64=" hash_arm64 }
+    }
+  ' "$env_file" > "$tmp_file"
+
+  mv "$tmp_file" "$env_file"
+}
+
 image_name_override="${IMAGE_NAME-}"
 dockerfile_override="${DOCKERFILE-}"
 version_override="${OPENCODE_VERSION-}"
@@ -11,6 +90,9 @@ platform_override="${OPENCODE_TARGETPLATFORM-}"
 hash_x64_override="${OPENCODE_SHA256_X64_BASELINE-}"
 hash_arm64_override="${OPENCODE_SHA256_ARM64-}"
 repo_override="${OPENCODE_GITHUB_REPO-}"
+
+fetch_hashes_mode="false"
+write_hashes_mode="false"
 
 detect_default_platform() {
   local arch
@@ -56,6 +138,18 @@ while [[ $# -gt 0 ]]; do
       build_args+=("$1" "$2")
       shift 2
       ;;
+    --fetch-hashes)
+      fetch_hashes_mode="true"
+      shift
+      ;;
+    --write-hashes)
+      write_hashes_mode="true"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
     *)
       build_args+=("$1")
       shift
@@ -77,26 +171,81 @@ OPENCODE_SHA256_X64_BASELINE="${hash_x64_override:-${OPENCODE_SHA256_X64_BASELIN
 OPENCODE_SHA256_ARM64="${hash_arm64_override:-${OPENCODE_SHA256_ARM64:-$default_sha256_arm64}}"
 OPENCODE_GITHUB_REPO="${repo_override:-${OPENCODE_GITHUB_REPO:-$default_repo}}"
 
+if [[ "$fetch_hashes_mode" == "true" ]]; then
+  OPENCODE_VERSION="${OPENCODE_VERSION#v}"
+  if [[ -z "$OPENCODE_VERSION" ]]; then
+    error "OPENCODE_VERSION is required for --fetch-hashes"
+    exit 1
+  fi
+  if [[ -z "$OPENCODE_GITHUB_REPO" ]]; then
+    error "OPENCODE_GITHUB_REPO is required for --fetch-hashes"
+    exit 1
+  fi
+
+  echo "Fetching release archives for v${OPENCODE_VERSION} from ${OPENCODE_GITHUB_REPO}"
+
+  x64_hash="$(fetch_hashes opencode-linux-x64-baseline.tar.gz)"
+  arm64_hash="$(fetch_hashes opencode-linux-arm64.tar.gz)"
+
+  validate_hash "OPENCODE_SHA256_X64_BASELINE" "$x64_hash"
+  validate_hash "OPENCODE_SHA256_ARM64" "$arm64_hash"
+
+  echo
+  echo "Export these values into $(printf '%q' "$ENV_FILE"):"
+  echo "OPENCODE_VERSION=${OPENCODE_VERSION}"
+  echo "OPENCODE_SHA256_X64_BASELINE=${x64_hash}"
+  echo "OPENCODE_SHA256_ARM64=${arm64_hash}"
+
+  if [[ "$write_hashes_mode" == "true" ]]; then
+    write_hashes_to_env "$ENV_FILE" "$x64_hash" "$arm64_hash"
+    echo "Updated ${ENV_FILE}"
+  fi
+
+  if [[ "$write_hashes_mode" == "false" ]]; then
+    echo "Tip: rerun with --write-hashes to persist these values automatically."
+  fi
+
+  exit 0
+fi
+
+if [[ "$write_hashes_mode" == "true" ]]; then
+  error "--write-hashes requires --fetch-hashes"
+  exit 1
+fi
+
+if [[ -z "${OPENCODE_VERSION}" ]]; then
+  error "Missing OPENCODE_VERSION"
+  exit 1
+fi
+
+if [[ -z "${OPENCODE_SHA256_X64_BASELINE}" ]]; then
+  error "Missing OPENCODE_SHA256_X64_BASELINE"
+  exit 1
+fi
+
+if [[ -z "${OPENCODE_SHA256_ARM64}" ]]; then
+  error "Missing OPENCODE_SHA256_ARM64"
+  exit 1
+fi
+
+if [[ -z "${OPENCODE_GITHUB_REPO}" ]]; then
+  error "Missing OPENCODE_GITHUB_REPO"
+  exit 1
+fi
+
+validate_hash "OPENCODE_SHA256_X64_BASELINE" "$OPENCODE_SHA256_X64_BASELINE"
+validate_hash "OPENCODE_SHA256_ARM64" "$OPENCODE_SHA256_ARM64"
+
+OPENCODE_VERSION="${OPENCODE_VERSION#v}"
+
 case "${OPENCODE_TARGETPLATFORM}" in
   linux/amd64|amd64|linux/arm64|arm64)
     :
     ;;
   *)
-    echo "Unsupported OPENCODE_TARGETPLATFORM: ${OPENCODE_TARGETPLATFORM}" >&2
-    echo "Supported values: linux/amd64, linux/arm64" >&2
+    error "Unsupported OPENCODE_TARGETPLATFORM: ${OPENCODE_TARGETPLATFORM}"
+    error "Supported values: linux/amd64, linux/arm64"
     exit 1
-    ;;
-esac
-
-case "${OPENCODE_VERSION}" in
-  1.2.9)
-    :
-    ;;
-  *)
-    if [[ -z "${OPENCODE_SHA256_X64_BASELINE}" || -z "${OPENCODE_SHA256_ARM64}" ]]; then
-      echo "Set OPENCODE_SHA256_X64_BASELINE and OPENCODE_SHA256_ARM64 for version ${OPENCODE_VERSION}." >&2
-      exit 1
-    fi
     ;;
 esac
 
