@@ -15,6 +15,14 @@ CONTAINER_UID="${CONTAINER_UID:-10001}"
 RUN_USER_TMPFS_SIZE="${RUN_USER_TMPFS_SIZE:-32m}"
 APPARMOR_PROFILE="${APPARMOR_PROFILE-}"
 
+if [[ "$#" -eq 0 ]]; then
+  run_command=(opencode)
+elif [[ "$1" == -* ]]; then
+  run_command=(opencode "$@")
+else
+  run_command=("$@")
+fi
+
 run_args=(
   --rm
   -i
@@ -72,4 +80,4 @@ run_args+=(
   -w /work
 )
 
-docker run "${run_args[@]}" "$IMAGE_NAME" "$@"
+docker run "${run_args[@]}" "$IMAGE_NAME" "${run_command[@]}"

@@ -92,10 +92,20 @@ If your host has an existing profile and you prefer that, set `APPARMOR_PROFILE`
 APPARMOR_PROFILE=docker-default ./run.sh
 ```
 
-You can also pass a command to run in the container:
+By default, `run.sh` launches `opencode` directly, so you can now do:
 
 ```bash
-./run.sh opencode
+./run.sh
+```
+
+You can still pass a command when you need shell access or custom args:
+
+```bash
+./run.sh bash
+```
+
+```bash
+./run.sh opencode --version
 ```
 
 ## Persistence behavior
