@@ -12,9 +12,23 @@ NETWORK_MODE="${NETWORK_MODE:-bridge}"
 READ_ONLY_ROOTFS="${READ_ONLY_ROOTFS:-true}"
 TMPFS_SIZE="${TMPFS_SIZE:-128m}"
 RUN_TMPFS_SIZE="${RUN_TMPFS_SIZE:-64m}"
-HOST_OS="${HOST_OS:-$(uname -s)}"
+HOST_OS_INPUT="${HOST_OS:-$(uname -s)}"
 CONTAINER_UID="${CONTAINER_UID:-}"
 CONTAINER_GID="${CONTAINER_GID:-}"
+
+case "${HOST_OS_INPUT,,}" in
+  linux*)
+    HOST_OS="Linux"
+    ;;
+  darwin*)
+    HOST_OS="Darwin"
+    ;;
+  *)
+    echo "Unsupported HOST_OS: ${HOST_OS_INPUT}" >&2
+    echo "Supported values: Linux, Darwin" >&2
+    exit 1
+    ;;
+esac
 
 if [[ -z "$CONTAINER_UID" ]]; then
   if [[ "$HOST_OS" == "Darwin" ]]; then
@@ -36,7 +50,18 @@ APPARMOR_PROFILE="${APPARMOR_PROFILE-}"
 REQUIRE_APPARMOR="${REQUIRE_APPARMOR:-false}"
 HOST_WORKDIR_MOUNT_OPTS="rw"
 
-if [[ "$(uname -s)" == "Linux" ]]; then
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is required but was not found in PATH." >&2
+  exit 1
+fi
+
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker daemon is not accessible. Is Docker running and is your user allowed to use it?" >&2
+  echo "If needed, run: sudo usermod -aG docker \$USER and re-login." >&2
+  exit 1
+fi
+
+if [[ "$HOST_OS" == "Linux" ]]; then
   HOST_WORKDIR_MOUNT_OPTS="rw,z"
 fi
 
@@ -58,7 +83,7 @@ if [[ -z "$STATE_VOLUME" ]]; then
   fi
 fi
 
-if [[ "$(uname -s)" == "Linux" ]]; then
+if [[ "$HOST_OS" == "Linux" ]]; then
   docker run --rm --user 0:0 \
     -v "$STATE_VOLUME:/home/opencode" \
     "$IMAGE_NAME" \
@@ -106,7 +131,7 @@ fi
 
 if [[ -n "$APPARMOR_PROFILE" ]]; then
   supports_apparmor=false
-  if [[ "$(uname -s)" == "Linux" ]]; then
+  if [[ "$HOST_OS" == "Linux" ]]; then
     security_options="$(docker info --format '{{json .SecurityOptions}}' 2>/dev/null || true)"
     if [[ "$security_options" == *"apparmor"* ]]; then
       supports_apparmor=true
