@@ -4,7 +4,7 @@ This directory contains a hardened Docker image and a small launcher script for 
 
 ## What is hardened right now (Phase 1)
 
-- Container runs as non-root user `opencode` (uid `10001`)
+- Container runs as a non-root user (`CONTAINER_UID`/`CONTAINER_GID`, defaulting to host UID/GID on Linux and `10001` on macOS)
 - `no-new-privileges` is enabled
 - All Linux capabilities are dropped (`--cap-drop=ALL`)
 - Basic resource limits are enabled (`pids`, `memory`, `cpu`)
@@ -114,7 +114,7 @@ You can still pass a command when you need shell access or custom args:
 
 State/config is persisted by default via a Docker named volume:
 
-- Volume name: `opencode-home`
+- Volume name: `opencode-home` when `CONTAINER_UID` is `10001`, otherwise `opencode-home-<uid>`
 - Mounted at: `/home/opencode`
 
 That means setup/auth files written under the container user's home directory should persist across runs.
@@ -127,7 +127,7 @@ Your project files are mounted from your host working directory into `/work`.
 
 - `IMAGE_NAME` (default `opencode-sandbox:dev`)
 - `CONTAINER_NAME` (default `opencode-sandbox`)
-- `STATE_VOLUME` (default `opencode-home`)
+- `STATE_VOLUME` (default `opencode-home` for uid 10001, otherwise `opencode-home-<uid>`)
 - `HOST_WORKDIR` (default current host directory)
 - `MEMORY_LIMIT` (default `1g`)
 - `CPU_LIMIT` (default `1.0`)
@@ -135,7 +135,8 @@ Your project files are mounted from your host working directory into `/work`.
 - `READ_ONLY_ROOTFS` (default `true`)
 - `TMPFS_SIZE` (default `128m`)
 - `RUN_TMPFS_SIZE` (default `64m`)
-- `CONTAINER_UID` (default `10001`)
+- `CONTAINER_UID` (default current host uid on Linux, `10001` on macOS)
+- `CONTAINER_GID` (default current host gid on Linux, `10001` on macOS)
 - `RUN_USER_TMPFS_SIZE` (default `32m`)
 - `NETWORK_MODE` (default `bridge`)
 - `APPARMOR_PROFILE` (default empty)
@@ -144,6 +145,7 @@ Your project files are mounted from your host working directory into `/work`.
 Note: `APPARMOR_PROFILE` only applies when Docker host AppArmor is available. On macOS, the value is ignored with a warning.
 `REQUIRE_APPARMOR=true` switches that behavior to fail fast instead of warning.
 `NETWORK_MODE` controls `docker run --network`; set `NETWORK_MODE=none` for strict offline mode.
+`CONTAINER_UID` and `CONTAINER_GID` are passed through to `docker run --user`; on Linux this should be your host account to keep `/work` writable.
 
 Example:
 
@@ -157,7 +159,7 @@ By default the container runs with a read-only root filesystem and writable moun
 - `/home/opencode` (persistent state)
 - `/tmp`, `/run`, and `/run/user/<uid>` (in-memory tmpfs)
 - `/tmp` is mounted with `exec` so OpenCode can initialize its terminal UI library
-- `XDG_RUNTIME_DIR` is set to `/run/user/10001` by default in read-only mode
+- `XDG_RUNTIME_DIR` is set to `/run/user/<uid>` in read-only mode
 - `/run/user/<uid>` is mounted as that same uid/gid so the container user can create runtime sockets/files there
 
 Disable read-only if needed:
@@ -171,5 +173,6 @@ READ_ONLY_ROOTFS=false ./run.sh
 If you need to start fresh, remove the named volume:
 
 ```bash
-docker volume rm opencode-home
+docker volume rm opencode-home            # default legacy UID 10001
+docker volume rm "opencode-home-$(id -u)"  # host-uid-based default
 ```

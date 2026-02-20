@@ -3,7 +3,7 @@ set -euo pipefail
 
 IMAGE_NAME="${IMAGE_NAME:-opencode-sandbox:dev}"
 CONTAINER_NAME="${CONTAINER_NAME:-opencode-sandbox}"
-STATE_VOLUME="${STATE_VOLUME:-opencode-home}"
+STATE_VOLUME="${STATE_VOLUME-}"
 HOST_WORKDIR="${HOST_WORKDIR:-$PWD}"
 MEMORY_LIMIT="${MEMORY_LIMIT:-1g}"
 CPU_LIMIT="${CPU_LIMIT:-1.0}"
@@ -12,14 +12,50 @@ NETWORK_MODE="${NETWORK_MODE:-bridge}"
 READ_ONLY_ROOTFS="${READ_ONLY_ROOTFS:-true}"
 TMPFS_SIZE="${TMPFS_SIZE:-128m}"
 RUN_TMPFS_SIZE="${RUN_TMPFS_SIZE:-64m}"
-CONTAINER_UID="${CONTAINER_UID:-10001}"
+HOST_OS="${HOST_OS:-$(uname -s)}"
+CONTAINER_UID="${CONTAINER_UID:-}"
+CONTAINER_GID="${CONTAINER_GID:-}"
+
+if [[ -z "$CONTAINER_UID" ]]; then
+  if [[ "$HOST_OS" == "Darwin" ]]; then
+    CONTAINER_UID="10001"
+  else
+    CONTAINER_UID="$(id -u)"
+  fi
+fi
+
+if [[ -z "$CONTAINER_GID" ]]; then
+  if [[ "$HOST_OS" == "Darwin" ]]; then
+    CONTAINER_GID="10001"
+  else
+    CONTAINER_GID="$(id -g)"
+  fi
+fi
 RUN_USER_TMPFS_SIZE="${RUN_USER_TMPFS_SIZE:-32m}"
 APPARMOR_PROFILE="${APPARMOR_PROFILE-}"
 REQUIRE_APPARMOR="${REQUIRE_APPARMOR:-false}"
+HOST_WORKDIR_MOUNT_OPTS="rw"
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  HOST_WORKDIR_MOUNT_OPTS="rw,z"
+fi
 
 if [[ ! "$CONTAINER_UID" =~ ^[0-9]+$ || "$CONTAINER_UID" -eq 0 ]]; then
   echo "Invalid CONTAINER_UID: ${CONTAINER_UID}" >&2
   exit 1
+fi
+
+if [[ ! "$CONTAINER_GID" =~ ^[0-9]+$ ]]; then
+  echo "Invalid CONTAINER_GID: ${CONTAINER_GID}" >&2
+  exit 1
+fi
+
+if [[ -z "$STATE_VOLUME" ]]; then
+  if [[ "$CONTAINER_UID" == "10001" ]]; then
+    STATE_VOLUME="opencode-home"
+  else
+    STATE_VOLUME="opencode-home-${CONTAINER_UID}"
+  fi
 fi
 
 if [[ "$#" -eq 0 ]]; then
@@ -40,6 +76,7 @@ run_args=(
   --pids-limit "$PIDS_LIMIT"
   --memory "$MEMORY_LIMIT"
   --cpus "$CPU_LIMIT"
+  --user "${CONTAINER_UID}:${CONTAINER_GID}"
 )
 
 case "${REQUIRE_APPARMOR,,}" in
@@ -94,7 +131,7 @@ case "${READ_ONLY_ROOTFS,,}" in
       --read-only
       --tmpfs "/tmp:size=${TMPFS_SIZE},mode=1777,nodev,nosuid,exec"
       --tmpfs "/run:size=${RUN_TMPFS_SIZE},mode=1777,nodev,nosuid"
-      --tmpfs "/run/user/${CONTAINER_UID}:size=${RUN_USER_TMPFS_SIZE},mode=700,nodev,nosuid,uid=${CONTAINER_UID},gid=${CONTAINER_UID}"
+      --tmpfs "/run/user/${CONTAINER_UID}:size=${RUN_USER_TMPFS_SIZE},mode=700,nodev,nosuid,uid=${CONTAINER_UID},gid=${CONTAINER_GID}"
       -e "XDG_RUNTIME_DIR=/run/user/${CONTAINER_UID}"
     )
     ;;
@@ -109,7 +146,7 @@ case "${READ_ONLY_ROOTFS,,}" in
 esac
 
 run_args+=(
-  -v "$HOST_WORKDIR:/work"
+  -v "$HOST_WORKDIR:/work:${HOST_WORKDIR_MOUNT_OPTS}"
   -v "$STATE_VOLUME:/home/opencode"
   -w /work
 )
