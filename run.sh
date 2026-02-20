@@ -8,12 +8,19 @@ HOST_WORKDIR="${HOST_WORKDIR:-$PWD}"
 MEMORY_LIMIT="${MEMORY_LIMIT:-1g}"
 CPU_LIMIT="${CPU_LIMIT:-1.0}"
 PIDS_LIMIT="${PIDS_LIMIT:-256}"
+NETWORK_MODE="${NETWORK_MODE:-bridge}"
 READ_ONLY_ROOTFS="${READ_ONLY_ROOTFS:-true}"
 TMPFS_SIZE="${TMPFS_SIZE:-128m}"
 RUN_TMPFS_SIZE="${RUN_TMPFS_SIZE:-64m}"
 CONTAINER_UID="${CONTAINER_UID:-10001}"
 RUN_USER_TMPFS_SIZE="${RUN_USER_TMPFS_SIZE:-32m}"
 APPARMOR_PROFILE="${APPARMOR_PROFILE-}"
+REQUIRE_APPARMOR="${REQUIRE_APPARMOR:-false}"
+
+if [[ ! "$CONTAINER_UID" =~ ^[0-9]+$ || "$CONTAINER_UID" -eq 0 ]]; then
+  echo "Invalid CONTAINER_UID: ${CONTAINER_UID}" >&2
+  exit 1
+fi
 
 if [[ "$#" -eq 0 ]]; then
   run_command=(opencode)
@@ -27,12 +34,27 @@ run_args=(
   --rm
   -i
   --name "$CONTAINER_NAME"
+  --network "$NETWORK_MODE"
   --security-opt no-new-privileges:true
   --cap-drop=ALL
   --pids-limit "$PIDS_LIMIT"
   --memory "$MEMORY_LIMIT"
   --cpus "$CPU_LIMIT"
 )
+
+case "${REQUIRE_APPARMOR,,}" in
+  1|true|yes|on)
+    enforce_apparmor=true
+    ;;
+  0|false|no|off|"")
+    enforce_apparmor=false
+    ;;
+  *)
+    echo "Invalid REQUIRE_APPARMOR value: ${REQUIRE_APPARMOR}" >&2
+    echo "Use true|false (or yes|no, 1|0)" >&2
+    exit 1
+    ;;
+esac
 
 if [[ -t 0 && -t 1 ]]; then
   run_args+=( -t )
@@ -50,7 +72,19 @@ if [[ -n "$APPARMOR_PROFILE" ]]; then
   if [[ "$supports_apparmor" == true ]]; then
     run_args+=(--security-opt "apparmor=${APPARMOR_PROFILE}")
   else
+    if [[ "$enforce_apparmor" == true ]]; then
+      echo "REQUIRE_APPARMOR=true requires AppArmor to be available on this host." >&2
+      echo "Set APPARMOR_PROFILE to a valid profile name, or set REQUIRE_APPARMOR=false." >&2
+      exit 1
+    fi
+
     echo "Warning: APPARMOR_PROFILE is set but AppArmor is not available on this host; running without AppArmor." >&2
+  fi
+else
+  if [[ "$enforce_apparmor" == true ]]; then
+    echo "REQUIRE_APPARMOR=true requires APPARMOR_PROFILE to be set." >&2
+    echo "Set APPARMOR_PROFILE to a valid profile name (for example, opencode-sandbox)." >&2
+    exit 1
   fi
 fi
 

@@ -137,9 +137,13 @@ Your project files are mounted from your host working directory into `/work`.
 - `RUN_TMPFS_SIZE` (default `64m`)
 - `CONTAINER_UID` (default `10001`)
 - `RUN_USER_TMPFS_SIZE` (default `32m`)
+- `NETWORK_MODE` (default `bridge`)
 - `APPARMOR_PROFILE` (default empty)
+- `REQUIRE_APPARMOR` (default `false`)
 
 Note: `APPARMOR_PROFILE` only applies when Docker host AppArmor is available. On macOS, the value is ignored with a warning.
+`REQUIRE_APPARMOR=true` switches that behavior to fail fast instead of warning.
+`NETWORK_MODE` controls `docker run --network`; set `NETWORK_MODE=none` for strict offline mode.
 
 Example:
 
