@@ -58,6 +58,13 @@ if [[ -z "$STATE_VOLUME" ]]; then
   fi
 fi
 
+if [[ "$(uname -s)" == "Linux" ]]; then
+  docker run --rm --user 0:0 \
+    -v "$STATE_VOLUME:/home/opencode" \
+    "$IMAGE_NAME" \
+    /bin/bash -lc "install -d -m 700 /home/opencode && chown \"${CONTAINER_UID}:${CONTAINER_GID}\" /home/opencode"
+fi
+
 if [[ "$#" -eq 0 ]]; then
   run_command=(opencode)
 elif [[ "$1" == -* ]]; then

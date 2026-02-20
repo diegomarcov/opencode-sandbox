@@ -146,6 +146,7 @@ Note: `APPARMOR_PROFILE` only applies when Docker host AppArmor is available. On
 `REQUIRE_APPARMOR=true` switches that behavior to fail fast instead of warning.
 `NETWORK_MODE` controls `docker run --network`; set `NETWORK_MODE=none` for strict offline mode.
 `CONTAINER_UID` and `CONTAINER_GID` are passed through to `docker run --user`; on Linux this should be your host account to keep `/work` writable.
+On Linux, `run.sh` also normalizes ownership of the default state volume (`/home/opencode`) to `CONTAINER_UID:CONTAINER_GID` before launching so project edits keep working after the first run.
 
 Example:
 
