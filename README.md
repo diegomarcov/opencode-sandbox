@@ -126,6 +126,18 @@ By default, `run.sh` launches `opencode` directly, so you can now do:
 ./run.sh
 ```
 
+You can mount a different host repo into `/work` with `--workdir`:
+
+```bash
+./run.sh --workdir /path/to/other-repo
+```
+
+This is equivalent to setting `HOST_WORKDIR` directly:
+
+```bash
+HOST_WORKDIR=/path/to/other-repo ./run.sh
+```
+
 You can still pass a command when you need shell access or custom args:
 
 ```bash

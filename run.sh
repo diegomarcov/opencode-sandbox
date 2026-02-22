@@ -26,6 +26,34 @@ APPARMOR_PROFILE="${APPARMOR_PROFILE-}"
 REQUIRE_APPARMOR="${REQUIRE_APPARMOR:-false}"
 HOST_WORKDIR_MOUNT_OPTS="rw"
 
+SCRIPT_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --workdir)
+      if [[ $# -lt 2 ]]; then
+        echo "--workdir requires a directory argument" >&2
+        exit 1
+      fi
+      HOST_WORKDIR="$2"
+      shift 2
+      ;;
+    --workdir=*)
+      HOST_WORKDIR="${1#--workdir=}"
+      shift
+      ;;
+    *)
+      SCRIPT_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "${HOST_WORKDIR}" ]]; then
+  echo "HOST_WORKDIR is empty" >&2
+  exit 1
+fi
+
 to_lower() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
@@ -183,12 +211,12 @@ case "$(to_lower "$STATE_INIT_MODE")" in
     ;;
 esac
 
-if [[ "$#" -eq 0 ]]; then
+if [[ "${#SCRIPT_ARGS[@]}" -eq 0 ]]; then
   run_command=(opencode)
-elif [[ "$1" == -* ]]; then
-  run_command=(opencode "$@")
+elif [[ "${SCRIPT_ARGS[0]}" == -* ]]; then
+  run_command=(opencode "${SCRIPT_ARGS[@]}")
 else
-  run_command=("$@")
+  run_command=("${SCRIPT_ARGS[@]}")
 fi
 
 run_args=(
