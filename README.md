@@ -23,6 +23,25 @@ Build image:
 ./build.sh
 ```
 
+Build a Python-focused environment (`python` profile):
+
+```bash
+SANDBOX_ENV=python ./build.sh
+```
+
+or explicitly pin the build stage:
+
+```bash
+./build.sh --sandbox-env python --target python
+```
+
+`--sandbox-env` and `--target` must match when both are set.
+
+Supported values for `SANDBOX_ENV`:
+
+- `opencode` (default): base `opencode` runtime
+- `python`: same hardening model plus minimal Python toolchain (`uv`, `python3`, `python3-pip`, `python3-venv`) installed
+
 `build.sh` reads default values from `build.env`, so the version and hashes are kept centralized.
 
 ### Upgrading Opencode version
@@ -148,6 +167,19 @@ You can still pass a command when you need shell access or custom args:
 ./run.sh opencode --version
 ```
 
+Use Python mode with the same command launcher:
+
+```bash
+SANDBOX_ENV=python ./run.sh python -V
+SANDBOX_ENV=python ./run.sh uv --version
+```
+
+Or via CLI flag:
+
+```bash
+./run.sh --sandbox-env=python python -V
+```
+
 ## Persistence behavior
 
 `opencode` is installed into the image at build time (`/usr/local/bin/opencode`), so you do **not** reinstall the binary each run.
@@ -166,6 +198,9 @@ Your project files are mounted from your host working directory into `/work`.
 `run.sh` supports these optional env vars:
 
 - `IMAGE_NAME` (default `opencode-sandbox:dev`)
+- `IMAGE_NAME_PYTHON` (default `opencode-sandbox-python:dev`)
+- `IMAGE_NAME_OPENCODE` (optional override for non-python default name)
+- `SANDBOX_ENV` (default `opencode`; supports `opencode`, `python`)
 - `CONTAINER_NAME` (default `opencode-sandbox`)
 - `STATE_VOLUME` (default `opencode-home` for uid 10001, otherwise `opencode-home-<uid>`)
 - `STATE_INIT_MODE` (default `auto`; options `auto`, `volume`, `bind`)

@@ -13,11 +13,16 @@ Usage:
 Environment variables override build values and pass through to Docker:
   OPENCODE_VERSION, OPENCODE_SHA256_X64_BASELINE,
   OPENCODE_SHA256_ARM64, OPENCODE_GITHUB_REPO,
-  OPENCODE_TARGETPLATFORM, IMAGE_NAME, DOCKERFILE
+  OPENCODE_TARGETPLATFORM, SANDBOX_ENV, IMAGE_NAME,
+  IMAGE_NAME_PYTHON, IMAGE_NAME_OPENCODE, DOCKERFILE
 
 Options:
   --platform <plat>       Same as --platform for docker build
   --platform=<plat>       Same as --platform for docker build
+  --sandbox-env <env>     Build environment profile (opencode|python)
+  --sandbox-env=<env>     Build environment profile (opencode|python)
+  --target <stage>        Docker build stage target (opencode|python)
+  --target=<stage>        Docker build stage target (opencode|python)
   --fetch-hashes          Download both release artifacts and print SHA-256 hashes for OPENCODE_VERSION
   --write-hashes          Update build.env with fetched hashes (use with --fetch-hashes)
   -h, --help              Show this help
@@ -37,6 +42,24 @@ validate_hash() {
     error "${name} must be a 64-char SHA-256 hex string"
     return 1
   fi
+}
+
+to_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+validate_sandbox_env() {
+  local sandbox_env="$(to_lower "$1")"
+  case "$sandbox_env" in
+    opencode|python)
+      return 0
+      ;;
+    *)
+      error "Unsupported SANDBOX_ENV: ${sandbox_env}"
+      error "Supported values: opencode, python"
+      return 1
+      ;;
+  esac
 }
 
 fetch_hashes() {
@@ -84,12 +107,15 @@ write_hashes_to_env() {
 }
 
 image_name_override="${IMAGE_NAME-}"
+sandbox_env_override="${SANDBOX_ENV-}"
 dockerfile_override="${DOCKERFILE-}"
 version_override="${OPENCODE_VERSION-}"
 platform_override="${OPENCODE_TARGETPLATFORM-}"
 hash_x64_override="${OPENCODE_SHA256_X64_BASELINE-}"
 hash_arm64_override="${OPENCODE_SHA256_ARM64-}"
 repo_override="${OPENCODE_GITHUB_REPO-}"
+sandbox_env_input=""
+sandbox_target_input=""
 
 fetch_hashes_mode="false"
 write_hashes_mode="false"
@@ -138,6 +164,38 @@ while [[ $# -gt 0 ]]; do
       build_args+=("$1" "$2")
       shift 2
       ;;
+    --sandbox-env=*)
+      sandbox_env_input="${1#--sandbox-env=}"
+      if [[ -z "$sandbox_env_input" ]]; then
+        echo "--sandbox-env requires an environment value" >&2
+        exit 1
+      fi
+      shift
+      ;;
+    --sandbox-env)
+      if [[ $# -lt 2 ]]; then
+        echo "--sandbox-env requires an environment value" >&2
+        exit 1
+      fi
+      sandbox_env_input="$2"
+      shift 2
+      ;;
+    --target=*)
+      sandbox_target_input="${1#--target=}"
+      if [[ -z "$sandbox_target_input" ]]; then
+        echo "--target requires a stage value" >&2
+        exit 1
+      fi
+      shift
+      ;;
+    --target)
+      if [[ $# -lt 2 ]]; then
+        echo "--target requires a stage value" >&2
+        exit 1
+      fi
+      sandbox_target_input="$2"
+      shift 2
+      ;;
     --fetch-hashes)
       fetch_hashes_mode="true"
       shift
@@ -162,14 +220,53 @@ default_version="${OPENCODE_VERSION-1.2.9}"
 default_sha256_x64="${OPENCODE_SHA256_X64_BASELINE-18d433f3a5685a056701cdd93d32e28f239fa04847fcce6f5b83e35ee36fcb79}"
 default_sha256_arm64="${OPENCODE_SHA256_ARM64-3d989ea59c542da2b96ed2484524bce254719fa470da85fed6a631a472ac47e5}"
 default_repo="${OPENCODE_GITHUB_REPO-anomalyco/opencode}"
+default_sandbox_env="${SANDBOX_ENV-opencode}"
+default_image_opencode="${IMAGE_NAME_OPENCODE:-${IMAGE_NAME:-opencode-sandbox:dev}}"
+default_image_python="${IMAGE_NAME_PYTHON:-opencode-sandbox-python:dev}"
 
-IMAGE_NAME="${image_name_override:-${IMAGE_NAME:-opencode-sandbox:dev}}"
 DOCKERFILE="${dockerfile_override:-${DOCKERFILE:-Dockerfile}}"
 OPENCODE_VERSION="${version_override:-${OPENCODE_VERSION:-$default_version}}"
 OPENCODE_TARGETPLATFORM="${platform_override:-${user_platform:-${OPENCODE_TARGETPLATFORM:-$default_platform}}}"
 OPENCODE_SHA256_X64_BASELINE="${hash_x64_override:-${OPENCODE_SHA256_X64_BASELINE:-$default_sha256_x64}}"
 OPENCODE_SHA256_ARM64="${hash_arm64_override:-${OPENCODE_SHA256_ARM64:-$default_sha256_arm64}}"
 OPENCODE_GITHUB_REPO="${repo_override:-${OPENCODE_GITHUB_REPO:-$default_repo}}"
+if [[ -n "$sandbox_env_input" ]]; then
+  SANDBOX_ENV="$(to_lower "$sandbox_env_input")"
+elif [[ -n "$sandbox_env_override" ]]; then
+  SANDBOX_ENV="$(to_lower "$sandbox_env_override")"
+elif [[ -n "$sandbox_target_input" ]]; then
+  SANDBOX_ENV="$(to_lower "$sandbox_target_input")"
+elif [[ -z "${SANDBOX_ENV-}" ]]; then
+  SANDBOX_ENV="$(to_lower "$default_sandbox_env")"
+fi
+
+if ! validate_sandbox_env "$SANDBOX_ENV"; then
+  exit 1
+fi
+
+if [[ -n "$sandbox_target_input" ]]; then
+  sandbox_target_input="$(to_lower "$sandbox_target_input")"
+  if [[ "$sandbox_target_input" != "$SANDBOX_ENV" ]]; then
+    error "Mismatched profile and build target: --sandbox-env=$SANDBOX_ENV and --target=$sandbox_target_input"
+    error "Set --sandbox-env and --target to the same value, or omit --target to use the profile default"
+    exit 1
+  fi
+fi
+
+SANDBOX_TARGET="${sandbox_target_input:-$SANDBOX_ENV}"
+
+if [[ -n "$image_name_override" ]]; then
+  IMAGE_NAME="$image_name_override"
+else
+  case "$SANDBOX_ENV" in
+    opencode)
+      IMAGE_NAME="$default_image_opencode"
+      ;;
+    python)
+      IMAGE_NAME="$default_image_python"
+      ;;
+  esac
+fi
 
 if [[ "$fetch_hashes_mode" == "true" ]]; then
   OPENCODE_VERSION="${OPENCODE_VERSION#v}"
@@ -261,6 +358,8 @@ docker build \
   --build-arg "OPENCODE_SHA256_X64_BASELINE=$OPENCODE_SHA256_X64_BASELINE" \
   --build-arg "OPENCODE_SHA256_ARM64=$OPENCODE_SHA256_ARM64" \
   --build-arg "OPENCODE_GITHUB_REPO=$OPENCODE_GITHUB_REPO" \
+  --build-arg "SANDBOX_ENV=$SANDBOX_ENV" \
+  --target "$SANDBOX_TARGET" \
   -f "$DOCKERFILE" \
   "${build_args[@]}" \
   .

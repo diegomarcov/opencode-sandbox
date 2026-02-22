@@ -3,7 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+IMAGE_NAME_OVERRIDE="${IMAGE_NAME-}"
 IMAGE_NAME="${IMAGE_NAME:-opencode-sandbox:dev}"
+SANDBOX_ENV="${SANDBOX_ENV:-opencode}"
 CONTAINER_NAME="${CONTAINER_NAME:-opencode-sandbox}"
 STATE_VOLUME="${STATE_VOLUME-}"
 STATE_INIT_MODE="${STATE_INIT_MODE:-auto}"
@@ -28,8 +30,41 @@ HOST_WORKDIR_MOUNT_OPTS="rw"
 
 SCRIPT_ARGS=()
 
+to_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+validate_sandbox_env() {
+  case "$(to_lower "$1")" in
+    opencode|python)
+      return 0
+      ;;
+    *)
+      echo "Unsupported SANDBOX_ENV: $1" >&2
+      echo "Supported values: opencode, python" >&2
+      return 1
+      ;;
+  esac
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --sandbox-env=*)
+      SANDBOX_ENV="${1#--sandbox-env=}"
+      if [[ -z "$SANDBOX_ENV" ]]; then
+        echo "--sandbox-env requires an environment value" >&2
+        exit 1
+      fi
+      shift
+      ;;
+    --sandbox-env)
+      if [[ $# -lt 2 ]]; then
+        echo "--sandbox-env requires an environment value" >&2
+        exit 1
+      fi
+      SANDBOX_ENV="$2"
+      shift 2
+      ;;
     --workdir)
       if [[ $# -lt 2 ]]; then
         echo "--workdir requires a directory argument" >&2
@@ -54,9 +89,22 @@ if [[ -z "${HOST_WORKDIR}" ]]; then
   exit 1
 fi
 
-to_lower() {
-  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
-}
+if ! validate_sandbox_env "$SANDBOX_ENV"; then
+  exit 1
+fi
+
+SANDBOX_ENV="$(to_lower "$SANDBOX_ENV")"
+
+if [[ -z "${IMAGE_NAME_OVERRIDE}" ]]; then
+  case "$(to_lower "$SANDBOX_ENV")" in
+    opencode)
+      IMAGE_NAME="${IMAGE_NAME_OPENCODE:-opencode-sandbox:dev}"
+      ;;
+    python)
+      IMAGE_NAME="${IMAGE_NAME_PYTHON:-opencode-sandbox-python:dev}"
+      ;;
+  esac
+fi
 
 is_true() {
   case "$(to_lower "$1")" in

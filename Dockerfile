@@ -1,17 +1,24 @@
-FROM ubuntu:24.04@sha256:d1e2e92c075e5ca139d51a140fff46f84315c0fdce203eab2807c7e495eff4f9
+FROM ubuntu:24.04@sha256:d1e2e92c075e5ca139d51a140fff46f84315c0fdce203eab2807c7e495eff4f9 AS base
 
 ARG OPENCODE_VERSION
 ARG OPENCODE_SHA256_X64_BASELINE
 ARG OPENCODE_SHA256_ARM64
 ARG OPENCODE_GITHUB_REPO
 ARG OPENCODE_TARGETPLATFORM
+ARG SANDBOX_ENV=opencode
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+RUN set -euo pipefail; \
+    if [ "${SANDBOX_ENV}" != "opencode" ] && [ "${SANDBOX_ENV}" != "python" ]; then \
+      echo "Unsupported SANDBOX_ENV: ${SANDBOX_ENV}" >&2; \
+      echo "Supported values: opencode, python" >&2; \
+      exit 1; \
+    fi; \
+    apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
        ca-certificates curl git tar \
- && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 COPY build.env /tmp/build.env
 
@@ -66,3 +73,26 @@ USER opencode:opencode
 
 WORKDIR /work
 CMD ["bash"]
+
+FROM base AS opencode
+
+FROM base AS python
+
+USER root
+
+RUN set -euo pipefail; \
+    mkdir -p /var/lib/apt/lists/partial \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       python3 python3-pip python3-venv \
+    && python3 -m pip install --no-cache-dir --break-system-packages uv \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/bin/pip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 --version >/dev/null \
+    && uv --version >/dev/null
+
+USER opencode:opencode
+
+FROM opencode
