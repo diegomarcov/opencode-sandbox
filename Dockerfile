@@ -176,8 +176,9 @@ ENV PATH="/opt/android-sdk/platform-tools:/opt/android-sdk/cmdline-tools/latest/
 ENV JAVA_HOME=/usr/lib/jvm/default-java-17
 ENV GRADLE_USER_HOME=/home/opencode/.gradle
 
-COPY scripts/android-connect-host.sh scripts/android-avd-init.sh scripts/android-emulator-start.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/android-connect-host.sh /usr/local/bin/android-avd-init.sh /usr/local/bin/android-emulator-start.sh
+COPY scripts/android-connect-host-core.sh scripts/android-connect-host.sh scripts/android-session-init.sh scripts/android-avd-init.sh scripts/android-emulator-start.sh /usr/local/bin/
+COPY resources/android/AGENTS.md /usr/share/opencode-sandbox/android/AGENTS.md
+RUN chmod +x /usr/local/bin/android-connect-host-core.sh /usr/local/bin/android-connect-host.sh /usr/local/bin/android-session-init.sh /usr/local/bin/android-avd-init.sh /usr/local/bin/android-emulator-start.sh
 
 USER opencode:opencode
 

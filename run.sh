@@ -36,6 +36,8 @@ ANDROID_EMULATOR_MODE="${ANDROID_EMULATOR_MODE:-host}"
 ADB_HOST="${ADB_HOST:-host.docker.internal}"
 ADB_PORT="${ADB_PORT:-5555}"
 ALLOW_SOFTWARE_EMULATOR="${ALLOW_SOFTWARE_EMULATOR:-false}"
+ANDROID_SESSION_INIT="${ANDROID_SESSION_INIT:-true}"
+SANDBOX_BOOTSTRAP_AGENTS="${SANDBOX_BOOTSTRAP_AGENTS:-false}"
 HOST_WORKDIR_MOUNT_OPTS="rw"
 
 SCRIPT_ARGS=()
@@ -326,6 +328,16 @@ else
   run_command=("${SCRIPT_ARGS[@]}")
 fi
 
+if [[ "$SANDBOX_ENV" == "android" ]] && is_true "$ANDROID_SESSION_INIT"; then
+  case "${run_command[0]}" in
+    android-session-init.sh|android-connect-host.sh|android-connect-host-core.sh|android-avd-init.sh|android-emulator-start.sh)
+      ;;
+    *)
+      run_command=(android-session-init.sh "${run_command[@]}")
+      ;;
+  esac
+fi
+
 run_args=(
   --rm
   -i
@@ -354,6 +366,8 @@ if [[ "$SANDBOX_ENV" == "android" ]]; then
     -e "ANDROID_HOME=/opt/android-sdk"
     -e "ANDROID_SDK_ROOT=/opt/android-sdk"
     -e "GRADLE_USER_HOME=/home/opencode/.gradle"
+    -e "ANDROID_SESSION_INIT=${ANDROID_SESSION_INIT}"
+    -e "SANDBOX_BOOTSTRAP_AGENTS=${SANDBOX_BOOTSTRAP_AGENTS}"
   )
 
   if [[ "$HOST_OS" == "Linux" ]]; then

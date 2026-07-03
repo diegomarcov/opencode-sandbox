@@ -211,6 +211,12 @@ SANDBOX_ENV=android ./run.sh java -version
 SANDBOX_ENV=android ./run.sh bash
 ```
 
+For Android projects, the recommended entry point is OpenCode with your project mounted — see [Android profile](#android-profile) and [docs/android-project-guide.md](docs/android-project-guide.md):
+
+```bash
+SANDBOX_ENV=android ./run.sh --workdir /path/to/android-project
+```
+
 Or via CLI flag:
 
 ```bash
@@ -221,14 +227,35 @@ See [Android profile](#android-profile) below for emulator workflows and Android
 
 ## Android profile
 
+For a step-by-step walkthrough (pick a host project, connect an emulator, build with Gradle), see [docs/android-project-guide.md](docs/android-project-guide.md).
+
 The `android` profile adds a pinned Android SDK (JDK 17, `adb`, `sdkmanager`, Gradle-friendly env vars), helper scripts for emulator workflows, and relaxed runtime defaults (`READ_ONLY_ROOTFS=false`, higher memory/CPU limits).
 
-Build the image first (see [Build](#build) above), then run SDK tools or OpenCode:
+**Primary workflow:** point the sandbox at your Android project and start OpenCode. Session init connects to the host emulator and prepares the environment automatically:
+
+```bash
+# Host: emulator listening on TCP 5555 (see below)
+SANDBOX_ENV=android ./run.sh --workdir /path/to/android-project
+```
+
+OpenCode then runs Gradle and `adb` commands in the same session — no manual `android-connect-host.sh` step.
+
+### Session bootstrap
+
+Every Android command (except diagnostic scripts) runs through `android-session-init.sh` first when `ANDROID_SESSION_INIT=true` (default). The init script:
+
+- Connects ADB to the host emulator in `host` mode (`adb connect` to `ADB_HOST:ADB_PORT`)
+- Validates that `/work` looks like an Android project
+- Prints a session summary (SDK path, ADB status, Gradle hints)
+- Runs your command — OpenCode by default, or `./gradlew`, `bash`, etc.
+
+Set `ANDROID_SESSION_INIT=false` to skip bootstrap for raw debugging. Set `SANDBOX_BOOTSTRAP_AGENTS=true` to copy a template `AGENTS.md` into `/work` on first run.
+
+Build the image first (see [Build](#build) above), then verify SDK tools:
 
 ```bash
 SANDBOX_ENV=android ./run.sh adb version
 SANDBOX_ENV=android ./run.sh java -version
-SANDBOX_ENV=android ./run.sh opencode
 ```
 
 ### Mode A: host emulator (default)
@@ -247,16 +274,21 @@ If the emulator is already running, enable TCP listening on the host:
 adb -e tcpip 5555
 ```
 
-2. Connect from the sandbox:
+2. Start OpenCode on your project (session init connects ADB automatically):
 
 ```bash
-SANDBOX_ENV=android ./run.sh android-connect-host.sh
-SANDBOX_ENV=android ./run.sh adb devices
+SANDBOX_ENV=android ./run.sh --workdir /path/to/android-project
+```
+
+Optional: copy Android-specific OpenCode rules into the project on first run:
+
+```bash
+SANDBOX_BOOTSTRAP_AGENTS=true SANDBOX_ENV=android ./run.sh --workdir /path/to/android-project
 ```
 
 On Linux, `run.sh` adds `host.docker.internal` via Docker's host gateway. On macOS, Docker Desktop provides `host.docker.internal` by default.
 
-Override the target host/port:
+For manual ADB diagnostics or custom host/port:
 
 ```bash
 ADB_HOST=host.docker.internal ADB_PORT=5555 SANDBOX_ENV=android ./run.sh android-connect-host.sh
@@ -295,6 +327,8 @@ In addition to the [general overrides](#useful-environment-overrides), the `andr
 - `ANDROID_EMULATOR_MODE` (default `host`; options `host`, `container`)
 - `ADB_HOST` (default `host.docker.internal`)
 - `ADB_PORT` (default `5555`)
+- `ANDROID_SESSION_INIT` (default `true`; runs `android-session-init.sh` before each command — connects host ADB and prints session summary)
+- `SANDBOX_BOOTSTRAP_AGENTS` (default `false`; when `true`, copies `/usr/share/opencode-sandbox/android/AGENTS.md` to `/work/AGENTS.md` if missing)
 - `ALLOW_SOFTWARE_EMULATOR` (default `false`; required on macOS for container mode)
 - `ANDROID_INSTALL_EMULATOR` (build-time; default `false`)
 - `ANDROID_SDK_VERSION`, `ANDROID_BUILD_TOOLS`, `ANDROID_PLATFORM` (build-time pins in `build.env`)

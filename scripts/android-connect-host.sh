@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ADB_HOST="${ADB_HOST:-host.docker.internal}"
-ADB_PORT="${ADB_PORT:-5555}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=android-connect-host-core.sh
+source "${SCRIPT_DIR}/android-connect-host-core.sh"
 
-adb kill-server >/dev/null 2>&1 || true
-adb start-server
-adb connect "${ADB_HOST}:${ADB_PORT}"
-adb devices
+android_adb_connect_host
+android_adb_list_devices
