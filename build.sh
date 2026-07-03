@@ -254,6 +254,18 @@ if ! validate_sandbox_env "$SANDBOX_ENV"; then
   exit 1
 fi
 
+# Google Android SDK platform-tools/build-tools ship linux-x86_64 natives only.
+# On arm64 hosts, default the android profile to linux/amd64 unless the caller
+# pinned a platform explicitly.
+if [[ "$SANDBOX_ENV" == "android" && -z "$platform_override" && -z "$user_platform" ]]; then
+  case "$(uname -m)" in
+    aarch64|arm64)
+      OPENCODE_TARGETPLATFORM="linux/amd64"
+      echo "Note: android profile uses linux/amd64 on arm64 hosts (Google SDK tools are x86_64-only)." >&2
+      ;;
+  esac
+fi
+
 if [[ -n "$sandbox_target_input" ]]; then
   sandbox_target_input="$(to_lower "$sandbox_target_input")"
   if [[ "$sandbox_target_input" != "$SANDBOX_ENV" ]]; then

@@ -96,6 +96,8 @@ OPENCODE_VERSION=1.2.10 ./build.sh --fetch-hashes --write-hashes
 - Linux arm64 / aarch64 -> `linux/arm64`
 - macOS arm64 (Apple Silicon) -> `linux/arm64`
 
+Exception: the `android` profile defaults to `linux/amd64` on arm64 hosts (including Apple Silicon) because Google's Android SDK native tools (`adb`, `aapt2`, etc.) are x86_64-only on Linux. Docker Desktop runs that image via emulation.
+
 You can also pin a specific target platform for cross-compilation:
 
 ```bash
@@ -303,6 +305,22 @@ In addition to the [general overrides](#useful-environment-overrides), the `andr
 - `EMULATOR_NO_WINDOW` (default `true`; used by `android-emulator-start.sh`)
 
 The `android` profile defaults to `READ_ONLY_ROOTFS=false`, `MEMORY_LIMIT=4g`, `CPU_LIMIT=2.0`, and `PIDS_LIMIT=512`.
+
+### Troubleshooting
+
+If `adb version` fails inside the container with:
+
+```text
+qemu-x86_64: Could not open '/lib64/ld-linux-x86-64.so.2': No such file or directory
+```
+
+the image was built for `linux/arm64` but Google's SDK installed x86_64 `adb`. Rebuild for amd64:
+
+```bash
+SANDBOX_ENV=android ./build.sh --platform linux/amd64
+```
+
+On arm64 hosts, `./build.sh` does this automatically for the `android` profile unless you pin another platform.
 
 ## Persistence behavior
 
