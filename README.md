@@ -35,6 +35,26 @@ or explicitly pin the build stage:
 ./build.sh --sandbox-env python --target python
 ```
 
+Build an Android-focused environment (`android` profile):
+
+```bash
+SANDBOX_ENV=android ./build.sh
+```
+
+or explicitly pin the build stage:
+
+```bash
+./build.sh --sandbox-env android --target android
+```
+
+Each profile builds a **separate image** (`opencode-sandbox:dev`, `opencode-sandbox-python:dev`, or `opencode-sandbox-android:dev`). You do not need to build the default `opencode` image first.
+
+For in-container emulator support (large image), include emulator packages at build time:
+
+```bash
+ANDROID_INSTALL_EMULATOR=true SANDBOX_ENV=android ./build.sh
+```
+
 `--sandbox-env` and `--target` must match when both are set.
 
 Supported values for `SANDBOX_ENV`:
@@ -181,29 +201,7 @@ Or via CLI flag:
 ./run.sh --sandbox-env=python python -V
 ```
 
-Build the Android profile:
-
-```bash
-SANDBOX_ENV=android ./build.sh
-```
-
-For in-container emulator support (large image), include emulator packages at build time:
-
-```bash
-ANDROID_INSTALL_EMULATOR=true SANDBOX_ENV=android ./build.sh
-```
-
-## Android profile
-
-The `android` profile adds a pinned Android SDK, JDK 17, and helper scripts for emulator workflows.
-
-### Build
-
-```bash
-./build.sh --sandbox-env android
-```
-
-### Run SDK tools
+Use Android mode with the same command launcher:
 
 ```bash
 SANDBOX_ENV=android ./run.sh adb version
@@ -211,11 +209,42 @@ SANDBOX_ENV=android ./run.sh java -version
 SANDBOX_ENV=android ./run.sh bash
 ```
 
+Or via CLI flag:
+
+```bash
+./run.sh --sandbox-env=android adb version
+```
+
+See [Android profile](#android-profile) below for emulator workflows and Android-specific environment variables.
+
+## Android profile
+
+The `android` profile adds a pinned Android SDK (JDK 17, `adb`, `sdkmanager`, Gradle-friendly env vars), helper scripts for emulator workflows, and relaxed runtime defaults (`READ_ONLY_ROOTFS=false`, higher memory/CPU limits).
+
+Build the image first (see [Build](#build) above), then run SDK tools or OpenCode:
+
+```bash
+SANDBOX_ENV=android ./run.sh adb version
+SANDBOX_ENV=android ./run.sh java -version
+SANDBOX_ENV=android ./run.sh opencode
+```
+
 ### Mode A: host emulator (default)
 
-Connect the container to an emulator or device running on the host:
+Connect the container to an emulator or device running on the host. This is the recommended mode on macOS.
 
-1. Start your host emulator listening on TCP port 5555 (for example `emulator -avd <name> -port 5555`).
+1. Start your host emulator listening on TCP port 5555. For example:
+
+```bash
+emulator -avd <name> -port 5555
+```
+
+If the emulator is already running, enable TCP listening on the host:
+
+```bash
+adb -e tcpip 5555
+```
+
 2. Connect from the sandbox:
 
 ```bash
@@ -267,6 +296,11 @@ In addition to the [general overrides](#useful-environment-overrides), the `andr
 - `ALLOW_SOFTWARE_EMULATOR` (default `false`; required on macOS for container mode)
 - `ANDROID_INSTALL_EMULATOR` (build-time; default `false`)
 - `ANDROID_SDK_VERSION`, `ANDROID_BUILD_TOOLS`, `ANDROID_PLATFORM` (build-time pins in `build.env`)
+- `ANDROID_EMULATOR_IMAGE_AMD64`, `ANDROID_EMULATOR_IMAGE_ARM64` (build-time system image pins in `build.env`)
+- `AVD_NAME` (default `sandbox`; used by `android-avd-init.sh` and `android-emulator-start.sh`)
+- `AVD_DEVICE` (default `pixel_6`; used by `android-avd-init.sh`)
+- `EMULATOR_GPU` (default `swiftshader_indirect`; used by `android-emulator-start.sh`)
+- `EMULATOR_NO_WINDOW` (default `true`; used by `android-emulator-start.sh`)
 
 The `android` profile defaults to `READ_ONLY_ROOTFS=false`, `MEMORY_LIMIT=4g`, `CPU_LIMIT=2.0`, and `PIDS_LIMIT=512`.
 
