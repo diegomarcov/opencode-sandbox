@@ -157,7 +157,7 @@ RUN set -euo pipefail; \
     mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest"; \
     export ANDROID_HOME ANDROID_SDK_ROOT="${ANDROID_HOME}"; \
     export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${PATH}"; \
-    yes | sdkmanager --licenses >/dev/null; \
+    yes | sdkmanager --licenses >/dev/null 2>&1 || test $? -eq 141; \
     sdkmanager \
       "platform-tools" \
       "platforms;${ANDROID_PLATFORM}" \
