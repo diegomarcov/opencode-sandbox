@@ -95,6 +95,10 @@ RUN python3 --version >/dev/null \
 
 USER opencode:opencode
 
+# x86_64 loader/libs for Google SDK natives (adb, aapt2) when the android image
+# is arm64. sdkmanager itself is Java and runs natively on either arch.
+FROM --platform=linux/amd64 ubuntu:24.04@sha256:d1e2e92c075e5ca139d51a140fff46f84315c0fdce203eab2807c7e495eff4f9 AS android-amd64-libs
+
 FROM base AS android
 
 ARG OPENCODE_TARGETPLATFORM
@@ -114,6 +118,20 @@ RUN set -euo pipefail; \
        openjdk-17-jdk-headless unzip wget \
        libgl1 libpulse0 libx11-6 libxcb1 libnss3 libdbus-1-3 \
     && rm -rf /var/lib/apt/lists/*
+
+# On arm64, run x86_64 Android SDK binaries through qemu-user.
+COPY --from=android-amd64-libs /lib64/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
+COPY --from=android-amd64-libs /lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+COPY --from=android-amd64-libs /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
+
+RUN set -euo pipefail; \
+    if [ "$(dpkg --print-architecture)" = "arm64" ]; then \
+      mkdir -p /var/lib/apt/lists/partial \
+      && apt-get update \
+      && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+         qemu-user-static \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 COPY build.env /tmp/build.env
 
@@ -167,8 +185,28 @@ RUN set -euo pipefail; \
     fi; \
     JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(which javac)")")")"; \
     ln -sfn "${JAVA_HOME}" /usr/lib/jvm/default-java-17; \
+    if [ "$(dpkg --print-architecture)" = "arm64" ]; then \
+      qemu_bin="$(command -v qemu-x86_64-static)"; \
+      wrap_x86_64() { \
+        local bin="$1"; \
+        local real="${bin}.x86_64"; \
+        if [ -f "$bin" ] && [ ! -e "$real" ]; then \
+          mv "$bin" "$real"; \
+          printf '#!/bin/bash\nexec %s %s "$@"\n' "$qemu_bin" "$real" > "$bin"; \
+          chmod 755 "$bin"; \
+        fi; \
+      }; \
+      wrap_x86_64 "${ANDROID_HOME}/platform-tools/adb"; \
+      for bin in "${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}"/*; do \
+        if [ -f "$bin" ] && [ -x "$bin" ] && ! head -n 1 "$bin" | grep -q '^#!'; then \
+          wrap_x86_64 "$bin"; \
+        fi; \
+      done; \
+    fi; \
     chown -R opencode:opencode "${ANDROID_HOME}"; \
-    install -d -m 0750 -o opencode -g opencode /home/opencode/.android /home/opencode/.gradle
+    install -d -m 0750 -o opencode -g opencode /home/opencode/.android /home/opencode/.gradle; \
+    "${ANDROID_HOME}/platform-tools/adb" version >/dev/null; \
+    "${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/aapt2" version >/dev/null
 
 ENV ANDROID_HOME=/opt/android-sdk
 ENV ANDROID_SDK_ROOT=/opt/android-sdk

@@ -37,13 +37,7 @@ From the `opencode-sandbox` directory:
 SANDBOX_ENV=android ./build.sh
 ```
 
-On Apple Silicon, the Android image is built for `linux/amd64` on purpose (Google's Linux SDK tools are x86_64). Docker Desktop emulates that platform. You may see a warning like:
-
-```text
-WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8)
-```
-
-That is expected and safe to ignore if `adb version` works in Step 2.
+On Apple Silicon, the Android image is built for `linux/amd64` on purpose (Google's Linux SDK tools are x86_64). Docker Desktop emulates that platform. On Apple Silicon the android image is `linux/arm64` so OpenCode runs natively. Google's x86_64 SDK tools (`adb`, `aapt2`) run through qemu-user inside the image.
 
 ## Step 2 — Verify the image
 
@@ -92,16 +86,11 @@ Omitting a command defaults to **OpenCode**. The container runs `android-session
 
 1. Connects ADB to the host emulator (`host.docker.internal:5555` by default)
 2. Validates the project at `/work`
-3. Prints a session summary (SDK, ADB status, Gradle hints)
-4. Launches OpenCode
+3. On first run, copies `AGENTS.md` into the project (unless `SANDBOX_BOOTSTRAP_AGENTS=false`)
+4. Prints a session summary (SDK, ADB status, Gradle hints)
+5. Launches OpenCode — on first run, with a prompt so the agent runs `adb devices`, `./gradlew assembleDebug`, and `./gradlew installDebug` itself
 
-From OpenCode, ask it to build, install, or debug — for example `./gradlew assembleDebug`, `./gradlew installDebug`, or `adb logcat`. All commands run in the **same container session**, so the host emulator stays connected.
-
-Optional: seed OpenCode project rules on first run (only if `/work/AGENTS.md` does not exist):
-
-```bash
-SANDBOX_BOOTSTRAP_AGENTS=true SANDBOX_ENV=android ./run.sh --workdir "$ANDROID_PROJECT"
-```
+You do not need to run Gradle or `adb` commands manually. The agent uses them when setting up or verifying the app. All commands run in the **same container session**, so the host emulator stays connected.
 
 Use an interactive terminal (not a background task runner) so stdin/stdout stay attached to OpenCode.
 
@@ -189,8 +178,8 @@ emulator -avd MyAvd -port 5555
 export ANDROID_PROJECT=/Users/you/AndroidStudioProjects/my-app
 SANDBOX_ENV=android ./run.sh --workdir "$ANDROID_PROJECT"
 
-# 4. From OpenCode, run builds/installs (same session — no manual adb connect)
-#    e.g. ./gradlew assembleDebug, ./gradlew installDebug, adb logcat
+# 4. On first run, OpenCode builds and installs the debug app automatically.
+#    Later sessions: ask the agent to rebuild/reinstall or check logcat as needed.
 ```
 
 ## Troubleshooting
@@ -229,15 +218,23 @@ If your project's `local.properties` points at a host macOS SDK path, Gradle may
 
 On Linux, `run.sh` defaults `CONTAINER_UID`/`CONTAINER_GID` to your host user so `/work` stays writable. On macOS the default is `10001`; project files are still writable via the mount.
 
-### `qemu-x86_64: Could not open '/lib64/ld-linux-x86-64.so.2'`
+### OpenCode prints Bun help instead of starting
 
-The Android image was built for the wrong platform. Rebuild:
+The android image has an amd64 OpenCode binary running under full-VM emulation (broken Bun compile mode). Rebuild for the host-native platform:
 
 ```bash
-SANDBOX_ENV=android ./build.sh --platform linux/amd64
+SANDBOX_ENV=android ./build.sh
 ```
 
-On arm64 hosts, `./build.sh` normally selects `linux/amd64` for the Android profile automatically.
+On Apple Silicon this builds `linux/arm64`.
+
+### `qemu-x86_64: Could not open '/lib64/ld-linux-x86-64.so.2'`
+
+The arm64 android image is missing bundled x86_64 loader libs for Google SDK tools. Rebuild with the current Dockerfile:
+
+```bash
+SANDBOX_ENV=android ./build.sh
+```
 
 ### SDK version mismatch in the project
 

@@ -2,6 +2,17 @@
 
 This project runs inside the opencode-sandbox Android profile. The working directory is `/work`.
 
+## First session (required)
+
+When this project is first opened in the sandbox (or when this file was just created), proactively set it up. Do **not** ask the user to run build or install commands — execute them yourself:
+
+1. `adb devices` — confirm a device/emulator is connected
+2. `./gradlew assembleDebug` — build the debug APK; fix any errors
+3. `./gradlew installDebug` — install on the connected device
+4. If install or app startup fails, use `adb logcat` (optionally filtered by the app package) to diagnose and fix
+
+After the first successful install, keep using these commands whenever you change code that should be verified on device.
+
 ## Build and run
 
 - Debug APK: `./gradlew assembleDebug`

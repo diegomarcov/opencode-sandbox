@@ -37,7 +37,7 @@ ADB_HOST="${ADB_HOST:-host.docker.internal}"
 ADB_PORT="${ADB_PORT:-5555}"
 ALLOW_SOFTWARE_EMULATOR="${ALLOW_SOFTWARE_EMULATOR:-false}"
 ANDROID_SESSION_INIT="${ANDROID_SESSION_INIT:-true}"
-SANDBOX_BOOTSTRAP_AGENTS="${SANDBOX_BOOTSTRAP_AGENTS:-false}"
+SANDBOX_BOOTSTRAP_AGENTS="${SANDBOX_BOOTSTRAP_AGENTS-}"
 HOST_WORKDIR_MOUNT_OPTS="rw"
 
 SCRIPT_ARGS=()
@@ -166,6 +166,8 @@ if [[ "$SANDBOX_ENV" == "android" ]]; then
   CPU_LIMIT="${CPU_LIMIT_INPUT:-2.0}"
   PIDS_LIMIT="${PIDS_LIMIT_INPUT:-512}"
   READ_ONLY_ROOTFS="${READ_ONLY_ROOTFS_INPUT:-false}"
+  # Seed AGENTS.md and trigger first-session build/install unless the caller overrides.
+  SANDBOX_BOOTSTRAP_AGENTS="${SANDBOX_BOOTSTRAP_AGENTS:-true}"
 
   if [[ -z "$APPARMOR_PROFILE_INPUT" && "$HOST_OS" == "Linux" ]]; then
     if [[ "$ANDROID_EMULATOR_MODE" == "container" ]]; then
@@ -193,6 +195,8 @@ if [[ "$SANDBOX_ENV" == "android" ]]; then
     fi
     echo "Warning: /dev/kvm not found; emulator will run without hardware acceleration." >&2
   fi
+else
+  SANDBOX_BOOTSTRAP_AGENTS="${SANDBOX_BOOTSTRAP_AGENTS:-false}"
 fi
 
 case "$(to_lower "$STATE_INIT_MODE")" in

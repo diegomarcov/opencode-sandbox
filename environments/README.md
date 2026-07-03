@@ -14,7 +14,8 @@ Current profiles:
   - base `opencode` runtime plus Android SDK (JDK 17, `adb`, `sdkmanager`, Gradle-friendly env)
   - default image: `opencode-sandbox-android:dev`
   - relaxed runtime defaults: `READ_ONLY_ROOTFS=false`, higher memory/CPU limits
-  - session bootstrap: `android-session-init.sh` runs before each command (connects host ADB in `host` mode, validates `/work`, then execs OpenCode or the requested command)
+  - session bootstrap: `android-session-init.sh` runs before each command (connects host ADB in `host` mode, validates `/work`, seeds `AGENTS.md` on first run, then execs OpenCode with a first-session build/install prompt or the requested command)
+  - on arm64 hosts: native OpenCode; x86_64 Google SDK tools run via qemu-user
   - emulator modes via `ANDROID_EMULATOR_MODE`:
     - `host` (default): connect to emulator/device on the host via `adb connect`
     - `container` (opt-in): run emulator inside the container (Linux + KVM recommended)

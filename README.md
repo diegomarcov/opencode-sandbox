@@ -96,7 +96,7 @@ OPENCODE_VERSION=1.2.10 ./build.sh --fetch-hashes --write-hashes
 - Linux arm64 / aarch64 -> `linux/arm64`
 - macOS arm64 (Apple Silicon) -> `linux/arm64`
 
-Exception: the `android` profile defaults to `linux/amd64` on arm64 hosts (including Apple Silicon) because Google's Android SDK native tools (`adb`, `aapt2`, etc.) are x86_64-only on Linux. Docker Desktop runs that image via emulation.
+The `android` profile uses that same host-native platform so OpenCode runs natively. Google's Android SDK natives (`adb`, `aapt2`, etc.) are still x86_64 on Linux; on arm64 images they run through `qemu-user-static` with x86_64 loader libs bundled in the image.
 
 You can also pin a specific target platform for cross-compilation:
 
@@ -249,7 +249,7 @@ Every Android command (except diagnostic scripts) runs through `android-session-
 - Prints a session summary (SDK path, ADB status, Gradle hints)
 - Runs your command — OpenCode by default, or `./gradlew`, `bash`, etc.
 
-Set `ANDROID_SESSION_INIT=false` to skip bootstrap for raw debugging. Set `SANDBOX_BOOTSTRAP_AGENTS=true` to copy a template `AGENTS.md` into `/work` on first run.
+Set `ANDROID_SESSION_INIT=false` to skip bootstrap for raw debugging. By default the android profile sets `SANDBOX_BOOTSTRAP_AGENTS=true`, which copies a template `AGENTS.md` into `/work` on first run and starts OpenCode with a first-session prompt so the agent builds and installs the debug app (`assembleDebug` / `installDebug`) without asking you to run those commands manually.
 
 Build the image first (see [Build](#build) above), then verify SDK tools:
 
@@ -280,11 +280,7 @@ adb -e tcpip 5555
 SANDBOX_ENV=android ./run.sh --workdir /path/to/android-project
 ```
 
-Optional: copy Android-specific OpenCode rules into the project on first run:
-
-```bash
-SANDBOX_BOOTSTRAP_AGENTS=true SANDBOX_ENV=android ./run.sh --workdir /path/to/android-project
-```
+On first run for a project, the sandbox copies `AGENTS.md` into the project and starts OpenCode with a first-session prompt so the agent runs `adb devices`, `./gradlew assembleDebug`, and `./gradlew installDebug` itself. Set `SANDBOX_BOOTSTRAP_AGENTS=false` to skip that.
 
 On Linux, `run.sh` adds `host.docker.internal` via Docker's host gateway. On macOS, Docker Desktop provides `host.docker.internal` by default.
 
@@ -328,7 +324,7 @@ In addition to the [general overrides](#useful-environment-overrides), the `andr
 - `ADB_HOST` (default `host.docker.internal`)
 - `ADB_PORT` (default `5555`)
 - `ANDROID_SESSION_INIT` (default `true`; runs `android-session-init.sh` before each command — connects host ADB and prints session summary)
-- `SANDBOX_BOOTSTRAP_AGENTS` (default `false`; when `true`, copies `/usr/share/opencode-sandbox/android/AGENTS.md` to `/work/AGENTS.md` if missing)
+- `SANDBOX_BOOTSTRAP_AGENTS` (default `true` for android, `false` otherwise; when `true`, copies `/usr/share/opencode-sandbox/android/AGENTS.md` to `/work/AGENTS.md` if missing and starts OpenCode with a first-session build/install prompt)
 - `ALLOW_SOFTWARE_EMULATOR` (default `false`; required on macOS for container mode)
 - `ANDROID_INSTALL_EMULATOR` (build-time; default `false`)
 - `ANDROID_SDK_VERSION`, `ANDROID_BUILD_TOOLS`, `ANDROID_PLATFORM` (build-time pins in `build.env`)
@@ -342,19 +338,15 @@ The `android` profile defaults to `READ_ONLY_ROOTFS=false`, `MEMORY_LIMIT=4g`, `
 
 ### Troubleshooting
 
-If `adb version` fails inside the container with:
-
-```text
-qemu-x86_64: Could not open '/lib64/ld-linux-x86-64.so.2': No such file or directory
-```
-
-the image was built for `linux/arm64` but Google's SDK installed x86_64 `adb`. Rebuild for amd64:
+If OpenCode prints Bun's help text instead of starting the TUI, the android image is the wrong architecture (an amd64 OpenCode binary under qemu falls back to Bun). Rebuild for the host-native platform:
 
 ```bash
-SANDBOX_ENV=android ./build.sh --platform linux/amd64
+SANDBOX_ENV=android ./build.sh
 ```
 
-On arm64 hosts, `./build.sh` does this automatically for the `android` profile unless you pin another platform.
+On Apple Silicon that produces `linux/arm64` (native OpenCode; x86_64 `adb`/`aapt2` via qemu-user).
+
+If `adb version` fails with a missing `/lib64/ld-linux-x86-64.so.2`, the arm64 image is missing its bundled x86_64 loader libs — rebuild with the current Dockerfile (it copies those libs from an amd64 stage).
 
 ## Persistence behavior
 

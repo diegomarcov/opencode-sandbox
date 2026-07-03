@@ -6,9 +6,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/android-connect-host-core.sh"
 
 ANDROID_EMULATOR_MODE="${ANDROID_EMULATOR_MODE:-host}"
-SANDBOX_BOOTSTRAP_AGENTS="${SANDBOX_BOOTSTRAP_AGENTS:-false}"
+SANDBOX_BOOTSTRAP_AGENTS="${SANDBOX_BOOTSTRAP_AGENTS:-true}"
 AGENTS_TEMPLATE="/usr/share/opencode-sandbox/android/AGENTS.md"
 WORK_DIR="/work"
+FIRST_SESSION_MARKER="${WORK_DIR}/.opencode-sandbox-initialized"
+FIRST_SESSION_PROMPT='Perform first-session Android setup for this project now:
+1. Run `adb devices` and confirm a device is connected.
+2. Run `./gradlew assembleDebug` and fix any build errors.
+3. Run `./gradlew installDebug` to install the app on the device.
+4. If install or startup fails, use `adb logcat` to diagnose.
+Do not ask the user to run these commands — execute them yourself.'
 
 to_lower() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
@@ -21,8 +28,21 @@ is_true() {
   esac
 }
 
+assert_opencode_usable() {
+  local help_head
+  help_head="$(opencode --help 2>&1 | head -n 1 || true)"
+  if printf '%s' "$help_head" | grep -qi 'Usage: bun'; then
+    echo "Error: /usr/local/bin/opencode is falling back to Bun instead of OpenCode." >&2
+    echo "  This usually means the android image was built for the wrong platform." >&2
+    echo "  Rebuild with: SANDBOX_ENV=android ./build.sh" >&2
+    echo "  On Apple Silicon, the android image must be linux/arm64 (native OpenCode)." >&2
+    exit 1
+  fi
+}
+
 adb_status="no device"
 adb_ready_count=0
+first_session=false
 
 bootstrap_adb_host() {
   android_adb_connect_host || true
@@ -76,7 +96,13 @@ fi
 if is_true "$SANDBOX_BOOTSTRAP_AGENTS" && [[ -x "${WORK_DIR}/gradlew" || -f "${WORK_DIR}/gradlew" ]]; then
   if [[ ! -f "${WORK_DIR}/AGENTS.md" && -f "$AGENTS_TEMPLATE" ]]; then
     cp "$AGENTS_TEMPLATE" "${WORK_DIR}/AGENTS.md"
-    echo "Created ${WORK_DIR}/AGENTS.md from sandbox template (SANDBOX_BOOTSTRAP_AGENTS=true)."
+    echo "Created ${WORK_DIR}/AGENTS.md from sandbox template."
+  fi
+  if [[ ! -f "$FIRST_SESSION_MARKER" ]]; then
+    first_session=true
+    # Mark before launching OpenCode so a retry does not re-run setup automatically.
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$FIRST_SESSION_MARKER"
+    echo "First-session setup enabled (marker: ${FIRST_SESSION_MARKER})."
   fi
 fi
 
@@ -90,8 +116,22 @@ Android sandbox session ready
 
 EOF
 
-if [[ "$#" -eq 0 ]]; then
+launch_opencode() {
+  assert_opencode_usable
+  if [[ "$first_session" == true ]]; then
+    echo "First project setup: OpenCode will build and install the debug app."
+    exec opencode --prompt "$FIRST_SESSION_PROMPT"
+  fi
   exec opencode
+}
+
+# Default path from run.sh is `android-session-init.sh opencode` (no extra args).
+if [[ "$#" -eq 0 || ( "$#" -eq 1 && "$1" == "opencode" ) ]]; then
+  launch_opencode
+fi
+
+if [[ "$1" == "opencode" ]]; then
+  assert_opencode_usable
 fi
 
 exec "$@"

@@ -254,14 +254,13 @@ if ! validate_sandbox_env "$SANDBOX_ENV"; then
   exit 1
 fi
 
-# Google Android SDK platform-tools/build-tools ship linux-x86_64 natives only.
-# On arm64 hosts, default the android profile to linux/amd64 unless the caller
-# pinned a platform explicitly.
+# Android profile uses the host-native platform so OpenCode runs natively.
+# Google SDK natives (adb, aapt2) are still x86_64; the image runs them via
+# qemu-user on arm64 (see Dockerfile android stage).
 if [[ "$SANDBOX_ENV" == "android" && -z "$platform_override" && -z "$user_platform" ]]; then
   case "$(uname -m)" in
     aarch64|arm64)
-      OPENCODE_TARGETPLATFORM="linux/amd64"
-      echo "Note: android profile uses linux/amd64 on arm64 hosts (Google SDK tools are x86_64-only)." >&2
+      echo "Note: android profile uses linux/arm64 on arm64 hosts (OpenCode native; x86_64 SDK tools via qemu-user)." >&2
       ;;
   esac
 fi
