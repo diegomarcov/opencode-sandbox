@@ -1,0 +1,103 @@
+name: Android smoke
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  android-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build android profile
+        run: SANDBOX_ENV=android ./build.sh --platform linux/amd64
+
+      - name: Verify SDK tooling
+        run: |
+          docker run --rm opencode-sandbox-android:dev adb version
+          docker run --rm opencode-sandbox-android:dev java -version
+          docker run --rm opencode-sandbox-android:dev sdkmanager --list_installed
+
+  android-host-adb:
+    runs-on: ubuntu-latest
+    needs: android-sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start mock adb endpoint
+        run: |
+          python3 - <<'PY' &
+          import socket
+          import threading
+
+          def handle(client):
+              client.recv(4096)
+              client.sendall(b"OKAY")
+              client.close()
+
+          server = socket.socket()
+          server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          server.bind(("0.0.0.0", 5555))
+          server.listen(1)
+
+          def accept_loop():
+              while True:
+                  client, _ = server.accept()
+                  threading.Thread(target=handle, args=(client,), daemon=True).start()
+
+          threading.Thread(target=accept_loop, daemon=True).start()
+          server.fileno()
+          import time
+          time.sleep(300)
+          PY
+          MOCK_PID=$!
+          echo "MOCK_PID=${MOCK_PID}" >> "$GITHUB_ENV"
+
+      - name: Connect from android container
+        run: |
+          docker run --rm \
+            --add-host=host.docker.internal:host-gateway \
+            -e ADB_HOST=host.docker.internal \
+            -e ADB_PORT=5555 \
+            opencode-sandbox-android:dev \
+            android-connect-host.sh || true
+
+  android-emulator:
+    runs-on: ubuntu-latest
+    needs: android-sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build android profile with emulator
+        run: ANDROID_INSTALL_EMULATOR=true SANDBOX_ENV=android ./build.sh --platform linux/amd64
+
+      - name: Start headless emulator
+        if: runner.os == 'Linux'
+        timeout-minutes: 20
+        run: |
+          docker run -d --name android-emulator \
+            --device /dev/kvm \
+            --cap-add=SYS_NICE \
+            --security-opt seccomp=unconfined \
+            -e ANDROID_EMULATOR_MODE=container \
+            -v opencode-android-state:/home/opencode \
+            opencode-sandbox-android:dev \
+            bash -lc 'android-avd-init.sh && android-emulator-start.sh'
+
+          for i in $(seq 1 60); do
+            if docker exec android-emulator adb wait-for-device shell getprop sys.boot_completed 2>/dev/null | grep -q 1; then
+              echo "Emulator booted"
+              docker exec android-emulator adb shell getprop ro.build.version.sdk
+              exit 0
+            fi
+            sleep 10
+          done
+
+          docker logs android-emulator
+          exit 1
+
+      - name: Cleanup emulator container
+        if: always()
+        run: docker rm -f android-emulator 2>/dev/null || true

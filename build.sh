@@ -14,15 +14,18 @@ Environment variables override build values and pass through to Docker:
   OPENCODE_VERSION, OPENCODE_SHA256_X64_BASELINE,
   OPENCODE_SHA256_ARM64, OPENCODE_GITHUB_REPO,
   OPENCODE_TARGETPLATFORM, SANDBOX_ENV, IMAGE_NAME,
-  IMAGE_NAME_PYTHON, IMAGE_NAME_OPENCODE, DOCKERFILE
+  IMAGE_NAME_PYTHON, IMAGE_NAME_OPENCODE, IMAGE_NAME_ANDROID, DOCKERFILE,
+  ANDROID_SDK_VERSION, ANDROID_BUILD_TOOLS, ANDROID_PLATFORM,
+  ANDROID_EMULATOR_IMAGE_AMD64, ANDROID_EMULATOR_IMAGE_ARM64,
+  ANDROID_INSTALL_EMULATOR
 
 Options:
   --platform <plat>       Same as --platform for docker build
   --platform=<plat>       Same as --platform for docker build
-  --sandbox-env <env>     Build environment profile (opencode|python)
-  --sandbox-env=<env>     Build environment profile (opencode|python)
-  --target <stage>        Docker build stage target (opencode|python)
-  --target=<stage>        Docker build stage target (opencode|python)
+  --sandbox-env <env>     Build environment profile (opencode|python|android)
+  --sandbox-env=<env>     Build environment profile (opencode|python|android)
+  --target <stage>        Docker build stage target (opencode|python|android)
+  --target=<stage>        Docker build stage target (opencode|python|android)
   --fetch-hashes          Download both release artifacts and print SHA-256 hashes for OPENCODE_VERSION
   --write-hashes          Update build.env with fetched hashes (use with --fetch-hashes)
   -h, --help              Show this help
@@ -51,12 +54,12 @@ to_lower() {
 validate_sandbox_env() {
   local sandbox_env="$(to_lower "$1")"
   case "$sandbox_env" in
-    opencode|python)
+    opencode|python|android)
       return 0
       ;;
     *)
       error "Unsupported SANDBOX_ENV: ${sandbox_env}"
-      error "Supported values: opencode, python"
+      error "Supported values: opencode, python, android"
       return 1
       ;;
   esac
@@ -223,6 +226,13 @@ default_repo="${OPENCODE_GITHUB_REPO-anomalyco/opencode}"
 default_sandbox_env="${SANDBOX_ENV-opencode}"
 default_image_opencode="${IMAGE_NAME_OPENCODE:-${IMAGE_NAME:-opencode-sandbox:dev}}"
 default_image_python="${IMAGE_NAME_PYTHON:-opencode-sandbox-python:dev}"
+default_image_android="${IMAGE_NAME_ANDROID:-opencode-sandbox-android:dev}"
+default_android_sdk_version="${ANDROID_SDK_VERSION:-11076708}"
+default_android_build_tools="${ANDROID_BUILD_TOOLS:-34.0.0}"
+default_android_platform="${ANDROID_PLATFORM:-android-34}"
+default_android_emulator_image_amd64="${ANDROID_EMULATOR_IMAGE_AMD64:-"system-images;android-34;google_apis;x86_64"}"
+default_android_emulator_image_arm64="${ANDROID_EMULATOR_IMAGE_ARM64:-"system-images;android-34;google_apis;arm64-v8a"}"
+default_android_install_emulator="${ANDROID_INSTALL_EMULATOR:-false}"
 
 DOCKERFILE="${dockerfile_override:-${DOCKERFILE:-Dockerfile}}"
 OPENCODE_VERSION="${version_override:-${OPENCODE_VERSION:-$default_version}}"
@@ -265,8 +275,18 @@ else
     python)
       IMAGE_NAME="$default_image_python"
       ;;
+    android)
+      IMAGE_NAME="$default_image_android"
+      ;;
   esac
 fi
+
+ANDROID_SDK_VERSION="${ANDROID_SDK_VERSION:-$default_android_sdk_version}"
+ANDROID_BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-$default_android_build_tools}"
+ANDROID_PLATFORM="${ANDROID_PLATFORM:-$default_android_platform}"
+ANDROID_EMULATOR_IMAGE_AMD64="${ANDROID_EMULATOR_IMAGE_AMD64:-$default_android_emulator_image_amd64}"
+ANDROID_EMULATOR_IMAGE_ARM64="${ANDROID_EMULATOR_IMAGE_ARM64:-$default_android_emulator_image_arm64}"
+ANDROID_INSTALL_EMULATOR="${ANDROID_INSTALL_EMULATOR:-$default_android_install_emulator}"
 
 if [[ "$fetch_hashes_mode" == "true" ]]; then
   OPENCODE_VERSION="${OPENCODE_VERSION#v}"
@@ -359,6 +379,12 @@ docker build \
   --build-arg "OPENCODE_SHA256_ARM64=$OPENCODE_SHA256_ARM64" \
   --build-arg "OPENCODE_GITHUB_REPO=$OPENCODE_GITHUB_REPO" \
   --build-arg "SANDBOX_ENV=$SANDBOX_ENV" \
+  --build-arg "ANDROID_SDK_VERSION=$ANDROID_SDK_VERSION" \
+  --build-arg "ANDROID_BUILD_TOOLS=$ANDROID_BUILD_TOOLS" \
+  --build-arg "ANDROID_PLATFORM=$ANDROID_PLATFORM" \
+  --build-arg "ANDROID_EMULATOR_IMAGE_AMD64=$ANDROID_EMULATOR_IMAGE_AMD64" \
+  --build-arg "ANDROID_EMULATOR_IMAGE_ARM64=$ANDROID_EMULATOR_IMAGE_ARM64" \
+  --build-arg "ANDROID_INSTALL_EMULATOR=$ANDROID_INSTALL_EMULATOR" \
   --target "$SANDBOX_TARGET" \
   -f "$DOCKERFILE" \
   "${build_args[@]}" \

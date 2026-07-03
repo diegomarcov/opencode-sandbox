@@ -1,0 +1,105 @@
+#include <tunables/global>
+
+@{OPENCODE_HOME}=/home/opencode
+@{WORKDIR}=/work
+@{ANDROID_HOME}=/opt/android-sdk
+
+profile opencode-sandbox-android flags=(attach_disconnected, mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+
+  # Binary execution.
+  /usr/local/bin/opencode rix,
+  /usr/bin/opencode rix,
+  /usr/bin/** rix,
+  /bin/** rix,
+  /lib/** rix,
+  /lib64/** rix,
+  /usr/lib/** rix,
+  /usr/local/lib/** rix,
+  @{ANDROID_HOME}/** rix,
+
+  # TLS/cert and data reads.
+  /usr/share/** r,
+
+  # Writable work and state directories.
+  @{WORKDIR}/ rw,
+  @{WORKDIR}/** rwk,
+  @{OPENCODE_HOME}/ rw,
+  @{OPENCODE_HOME}/** rwk,
+  @{ANDROID_HOME}/ rw,
+  @{ANDROID_HOME}/** rwk,
+
+  # Runtime scratch areas.
+  /tmp/ rwk,
+  /tmp/** rwk,
+  /run/ rwk,
+  /run/** rwk,
+
+  # Read access needed by tools.
+  /proc/** r,
+  /sys/** r,
+  /etc/** r,
+
+  # Device access for normal process IO and adb/emulator.
+  /dev/null rw,
+  /dev/random r,
+  /dev/urandom r,
+  /dev/tty rw,
+  /dev/pts/[0-9]* rw,
+  /dev/kvm rw,
+
+  # Keep potentially risky operations unavailable.
+  deny /proc/*/mem rw,
+  deny /proc/kcore rw,
+  deny /proc/sys/kernel/core_pattern rw,
+  deny /sys/** w,
+  deny mount,
+  deny ptrace,
+}
+
+profile opencode-sandbox-android-emulator flags=(attach_disconnected, mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+
+  /usr/local/bin/opencode rix,
+  /usr/bin/opencode rix,
+  /usr/bin/** rix,
+  /bin/** rix,
+  /lib/** rix,
+  /lib64/** rix,
+  /usr/lib/** rix,
+  /usr/local/lib/** rix,
+  @{ANDROID_HOME}/** rix,
+
+  /usr/share/** r,
+
+  @{WORKDIR}/ rw,
+  @{WORKDIR}/** rwk,
+  @{OPENCODE_HOME}/ rw,
+  @{OPENCODE_HOME}/** rwk,
+  @{ANDROID_HOME}/ rw,
+  @{ANDROID_HOME}/** rwk,
+
+  /tmp/ rwk,
+  /tmp/** rwk,
+  /run/ rwk,
+  /run/** rwk,
+
+  /proc/** r,
+  /sys/** r,
+  /etc/** r,
+
+  /dev/null rw,
+  /dev/random r,
+  /dev/urandom r,
+  /dev/tty rw,
+  /dev/pts/[0-9]* rw,
+  /dev/kvm rw,
+
+  deny /proc/*/mem rw,
+  deny /proc/kcore rw,
+  deny /proc/sys/kernel/core_pattern rw,
+}

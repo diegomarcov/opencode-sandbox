@@ -11,21 +11,31 @@ STATE_VOLUME="${STATE_VOLUME-}"
 STATE_INIT_MODE="${STATE_INIT_MODE:-auto}"
 STATE_BIND_DIR="${STATE_BIND_DIR:-${HOME}/.local/share/opencode-sandbox/state}"
 HOST_WORKDIR="${HOST_WORKDIR:-$PWD}"
-MEMORY_LIMIT="${MEMORY_LIMIT:-1g}"
-CPU_LIMIT="${CPU_LIMIT:-1.0}"
-PIDS_LIMIT="${PIDS_LIMIT:-256}"
+MEMORY_LIMIT_INPUT="${MEMORY_LIMIT-}"
+CPU_LIMIT_INPUT="${CPU_LIMIT-}"
+PIDS_LIMIT_INPUT="${PIDS_LIMIT-}"
+READ_ONLY_ROOTFS_INPUT="${READ_ONLY_ROOTFS-}"
+MEMORY_LIMIT="${MEMORY_LIMIT_INPUT:-1g}"
+CPU_LIMIT="${CPU_LIMIT_INPUT:-1.0}"
+PIDS_LIMIT="${PIDS_LIMIT_INPUT:-256}"
 NETWORK_MODE="${NETWORK_MODE:-bridge}"
-READ_ONLY_ROOTFS="${READ_ONLY_ROOTFS:-true}"
+READ_ONLY_ROOTFS="${READ_ONLY_ROOTFS_INPUT:-true}"
 TMPFS_SIZE="${TMPFS_SIZE:-128m}"
 RUN_TMPFS_SIZE="${RUN_TMPFS_SIZE:-64m}"
 RUN_USER_TMPFS_SIZE="${RUN_USER_TMPFS_SIZE:-32m}"
 HOST_OS_INPUT="${HOST_OS:-$(uname -s)}"
 CONTAINER_UID="${CONTAINER_UID:-}"
 CONTAINER_GID="${CONTAINER_GID:-}"
-SECCOMP_PROFILE="${SECCOMP_PROFILE-}"
+SECCOMP_PROFILE_INPUT="${SECCOMP_PROFILE-}"
+SECCOMP_PROFILE="${SECCOMP_PROFILE_INPUT}"
 SECCOMP_ENFORCE="${SECCOMP_ENFORCE-}"
-APPARMOR_PROFILE="${APPARMOR_PROFILE-}"
+APPARMOR_PROFILE_INPUT="${APPARMOR_PROFILE-}"
+APPARMOR_PROFILE="${APPARMOR_PROFILE_INPUT}"
 REQUIRE_APPARMOR="${REQUIRE_APPARMOR:-false}"
+ANDROID_EMULATOR_MODE="${ANDROID_EMULATOR_MODE:-host}"
+ADB_HOST="${ADB_HOST:-host.docker.internal}"
+ADB_PORT="${ADB_PORT:-5555}"
+ALLOW_SOFTWARE_EMULATOR="${ALLOW_SOFTWARE_EMULATOR:-false}"
 HOST_WORKDIR_MOUNT_OPTS="rw"
 
 SCRIPT_ARGS=()
@@ -34,14 +44,28 @@ to_lower() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
+is_true() {
+  case "$(to_lower "$1")" in
+    1|true|yes|on)
+      return 0
+      ;;
+    0|false|no|off|"")
+      return 1
+      ;;
+    *)
+      return 2
+      ;;
+  esac
+}
+
 validate_sandbox_env() {
   case "$(to_lower "$1")" in
-    opencode|python)
+    opencode|python|android)
       return 0
       ;;
     *)
       echo "Unsupported SANDBOX_ENV: $1" >&2
-      echo "Supported values: opencode, python" >&2
+      echo "Supported values: opencode, python, android" >&2
       return 1
       ;;
   esac
@@ -95,31 +119,6 @@ fi
 
 SANDBOX_ENV="$(to_lower "$SANDBOX_ENV")"
 
-if [[ -z "${IMAGE_NAME_OVERRIDE}" ]]; then
-  case "$(to_lower "$SANDBOX_ENV")" in
-    opencode)
-      IMAGE_NAME="${IMAGE_NAME_OPENCODE:-opencode-sandbox:dev}"
-      ;;
-    python)
-      IMAGE_NAME="${IMAGE_NAME_PYTHON:-opencode-sandbox-python:dev}"
-      ;;
-  esac
-fi
-
-is_true() {
-  case "$(to_lower "$1")" in
-    1|true|yes|on)
-      return 0
-      ;;
-    0|false|no|off|"")
-      return 1
-      ;;
-    *)
-      return 2
-      ;;
-  esac
-}
-
 case "$(to_lower "$HOST_OS_INPUT")" in
   linux*)
     HOST_OS="Linux"
@@ -133,6 +132,66 @@ case "$(to_lower "$HOST_OS_INPUT")" in
     exit 1
     ;;
 esac
+
+if [[ -z "${IMAGE_NAME_OVERRIDE}" ]]; then
+  case "$(to_lower "$SANDBOX_ENV")" in
+    opencode)
+      IMAGE_NAME="${IMAGE_NAME_OPENCODE:-opencode-sandbox:dev}"
+      ;;
+    python)
+      IMAGE_NAME="${IMAGE_NAME_PYTHON:-opencode-sandbox-python:dev}"
+      ;;
+    android)
+      IMAGE_NAME="${IMAGE_NAME_ANDROID:-opencode-sandbox-android:dev}"
+      ;;
+  esac
+fi
+
+ANDROID_EMULATOR_MODE="$(to_lower "$ANDROID_EMULATOR_MODE")"
+case "$ANDROID_EMULATOR_MODE" in
+  host|container)
+    :
+    ;;
+  *)
+    echo "Invalid ANDROID_EMULATOR_MODE: ${ANDROID_EMULATOR_MODE}" >&2
+    echo "Use host or container" >&2
+    exit 1
+    ;;
+esac
+
+if [[ "$SANDBOX_ENV" == "android" ]]; then
+  MEMORY_LIMIT="${MEMORY_LIMIT_INPUT:-4g}"
+  CPU_LIMIT="${CPU_LIMIT_INPUT:-2.0}"
+  PIDS_LIMIT="${PIDS_LIMIT_INPUT:-512}"
+  READ_ONLY_ROOTFS="${READ_ONLY_ROOTFS_INPUT:-false}"
+
+  if [[ -z "$APPARMOR_PROFILE_INPUT" && "$HOST_OS" == "Linux" ]]; then
+    if [[ "$ANDROID_EMULATOR_MODE" == "container" ]]; then
+      APPARMOR_PROFILE="opencode-sandbox-android-emulator"
+    else
+      APPARMOR_PROFILE="opencode-sandbox-android"
+    fi
+  fi
+
+  if [[ "$ANDROID_EMULATOR_MODE" == "container" && "$HOST_OS" == "Darwin" ]]; then
+    if ! is_true "$ALLOW_SOFTWARE_EMULATOR"; then
+      echo "In-container emulator mode on macOS has no KVM support and is very slow." >&2
+      echo "Use ANDROID_EMULATOR_MODE=host (default) to connect to a host emulator," >&2
+      echo "or set ALLOW_SOFTWARE_EMULATOR=true to proceed with software emulation." >&2
+      exit 1
+    fi
+    echo "Warning: running in-container emulator on macOS without KVM; expect poor performance." >&2
+  fi
+
+  if [[ "$ANDROID_EMULATOR_MODE" == "container" && "$HOST_OS" == "Linux" && ! -e /dev/kvm ]]; then
+    if ! is_true "$ALLOW_SOFTWARE_EMULATOR"; then
+      echo "/dev/kvm is not available on this host." >&2
+      echo "Enable KVM, use ANDROID_EMULATOR_MODE=host, or set ALLOW_SOFTWARE_EMULATOR=true." >&2
+      exit 1
+    fi
+    echo "Warning: /dev/kvm not found; emulator will run without hardware acceleration." >&2
+  fi
+fi
 
 case "$(to_lower "$STATE_INIT_MODE")" in
   auto|volume|bind)
@@ -273,12 +332,43 @@ run_args=(
   --name "$CONTAINER_NAME"
   --network "$NETWORK_MODE"
   --security-opt no-new-privileges:true
-  --cap-drop=ALL
   --pids-limit "$PIDS_LIMIT"
   --memory "$MEMORY_LIMIT"
   --cpus "$CPU_LIMIT"
   --user "${CONTAINER_UID}:${CONTAINER_GID}"
 )
+
+android_container_emulator=false
+if [[ "$SANDBOX_ENV" == "android" && "$ANDROID_EMULATOR_MODE" == "container" ]]; then
+  android_container_emulator=true
+  run_args+=(--cap-add=SYS_NICE)
+else
+  run_args+=(--cap-drop=ALL)
+fi
+
+if [[ "$SANDBOX_ENV" == "android" ]]; then
+  run_args+=(
+    -e "ANDROID_EMULATOR_MODE=${ANDROID_EMULATOR_MODE}"
+    -e "ADB_HOST=${ADB_HOST}"
+    -e "ADB_PORT=${ADB_PORT}"
+    -e "ANDROID_HOME=/opt/android-sdk"
+    -e "ANDROID_SDK_ROOT=/opt/android-sdk"
+    -e "GRADLE_USER_HOME=/home/opencode/.gradle"
+  )
+
+  if [[ "$HOST_OS" == "Linux" ]]; then
+    run_args+=(--add-host=host.docker.internal:host-gateway)
+  fi
+
+  if [[ "$android_container_emulator" == true && "$HOST_OS" == "Linux" && -e /dev/kvm ]]; then
+    run_args+=(--device /dev/kvm)
+    if kvm_gid="$(getent group kvm 2>/dev/null | cut -d: -f3)"; then
+      if [[ -n "$kvm_gid" ]]; then
+        run_args+=(--group-add "$kvm_gid")
+      fi
+    fi
+  fi
+fi
 
 case "$(to_lower "$REQUIRE_APPARMOR")" in
   1|true|yes|on)
@@ -343,7 +433,19 @@ else
   fi
 fi
 
-if [[ -z "$SECCOMP_PROFILE" && "$HOST_OS" == "Darwin" ]]; then
+if [[ "$SANDBOX_ENV" == "android" && -z "$SECCOMP_PROFILE_INPUT" ]]; then
+  if [[ "$ANDROID_EMULATOR_MODE" == "container" ]]; then
+    if [[ "$HOST_OS" == "Darwin" ]]; then
+      SECCOMP_PROFILE="${SCRIPT_DIR}/seccomp/opencode-android-mac.json"
+    else
+      SECCOMP_PROFILE=""
+    fi
+  elif [[ "$HOST_OS" == "Darwin" ]]; then
+    SECCOMP_PROFILE="${SCRIPT_DIR}/seccomp/opencode-mac.json"
+  fi
+fi
+
+if [[ -z "$SECCOMP_PROFILE" && "$HOST_OS" == "Darwin" && "$SANDBOX_ENV" != "android" ]]; then
   SECCOMP_PROFILE="${SCRIPT_DIR}/seccomp/opencode-mac.json"
 fi
 

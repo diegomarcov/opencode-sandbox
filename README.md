@@ -41,6 +41,7 @@ Supported values for `SANDBOX_ENV`:
 
 - `opencode` (default): base `opencode` runtime
 - `python`: same hardening model plus minimal Python toolchain (`uv`, `python3`, `python3-pip`, `python3-venv`) installed
+- `android`: same base runtime plus Android SDK (JDK 17, `adb`, `sdkmanager`); see [Android profile](#android-profile) below
 
 `build.sh` reads default values from `build.env`, so the version and hashes are kept centralized.
 
@@ -180,6 +181,95 @@ Or via CLI flag:
 ./run.sh --sandbox-env=python python -V
 ```
 
+Build the Android profile:
+
+```bash
+SANDBOX_ENV=android ./build.sh
+```
+
+For in-container emulator support (large image), include emulator packages at build time:
+
+```bash
+ANDROID_INSTALL_EMULATOR=true SANDBOX_ENV=android ./build.sh
+```
+
+## Android profile
+
+The `android` profile adds a pinned Android SDK, JDK 17, and helper scripts for emulator workflows.
+
+### Build
+
+```bash
+./build.sh --sandbox-env android
+```
+
+### Run SDK tools
+
+```bash
+SANDBOX_ENV=android ./run.sh adb version
+SANDBOX_ENV=android ./run.sh java -version
+SANDBOX_ENV=android ./run.sh bash
+```
+
+### Mode A: host emulator (default)
+
+Connect the container to an emulator or device running on the host:
+
+1. Start your host emulator listening on TCP port 5555 (for example `emulator -avd <name> -port 5555`).
+2. Connect from the sandbox:
+
+```bash
+SANDBOX_ENV=android ./run.sh android-connect-host.sh
+SANDBOX_ENV=android ./run.sh adb devices
+```
+
+On Linux, `run.sh` adds `host.docker.internal` via Docker's host gateway. On macOS, Docker Desktop provides `host.docker.internal` by default.
+
+Override the target host/port:
+
+```bash
+ADB_HOST=host.docker.internal ADB_PORT=5555 SANDBOX_ENV=android ./run.sh android-connect-host.sh
+```
+
+### Mode B: in-container emulator (opt-in)
+
+Requires building with `ANDROID_INSTALL_EMULATOR=true`. Uses relaxed security (KVM device passthrough on Linux, higher resource limits).
+
+```bash
+ANDROID_INSTALL_EMULATOR=true SANDBOX_ENV=android ./build.sh
+
+# Linux with /dev/kvm
+ANDROID_EMULATOR_MODE=container SANDBOX_ENV=android ./run.sh android-avd-init.sh
+ANDROID_EMULATOR_MODE=container SANDBOX_ENV=android ./run.sh android-emulator-start.sh
+```
+
+On macOS, in-container emulation has no KVM and is very slow. You must opt in explicitly:
+
+```bash
+ANDROID_EMULATOR_MODE=container ALLOW_SOFTWARE_EMULATOR=true SANDBOX_ENV=android ./run.sh android-emulator-start.sh
+```
+
+Load Android AppArmor profiles on Linux before running with AppArmor:
+
+```bash
+bash ./scripts/load-apparmor-profile.sh apparmor/opencode-sandbox-android
+bash ./scripts/load-apparmor-profile.sh apparmor/opencode-sandbox-android-emulator
+```
+
+### Android environment overrides
+
+In addition to the [general overrides](#useful-environment-overrides), the `android` profile supports:
+
+- `IMAGE_NAME_ANDROID` (default `opencode-sandbox-android:dev`)
+- `ANDROID_EMULATOR_MODE` (default `host`; options `host`, `container`)
+- `ADB_HOST` (default `host.docker.internal`)
+- `ADB_PORT` (default `5555`)
+- `ALLOW_SOFTWARE_EMULATOR` (default `false`; required on macOS for container mode)
+- `ANDROID_INSTALL_EMULATOR` (build-time; default `false`)
+- `ANDROID_SDK_VERSION`, `ANDROID_BUILD_TOOLS`, `ANDROID_PLATFORM` (build-time pins in `build.env`)
+
+The `android` profile defaults to `READ_ONLY_ROOTFS=false`, `MEMORY_LIMIT=4g`, `CPU_LIMIT=2.0`, and `PIDS_LIMIT=512`.
+
 ## Persistence behavior
 
 `opencode` is installed into the image at build time (`/usr/local/bin/opencode`), so you do **not** reinstall the binary each run.
@@ -199,8 +289,9 @@ Your project files are mounted from your host working directory into `/work`.
 
 - `IMAGE_NAME` (default `opencode-sandbox:dev`)
 - `IMAGE_NAME_PYTHON` (default `opencode-sandbox-python:dev`)
+- `IMAGE_NAME_ANDROID` (default `opencode-sandbox-android:dev`)
 - `IMAGE_NAME_OPENCODE` (optional override for non-python default name)
-- `SANDBOX_ENV` (default `opencode`; supports `opencode`, `python`)
+- `SANDBOX_ENV` (default `opencode`; supports `opencode`, `python`, `android`)
 - `CONTAINER_NAME` (default `opencode-sandbox`)
 - `STATE_VOLUME` (default `opencode-home` for uid 10001, otherwise `opencode-home-<uid>`)
 - `STATE_INIT_MODE` (default `auto`; options `auto`, `volume`, `bind`)
